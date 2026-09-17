@@ -1,0 +1,183 @@
+name: nifi-etl-demo
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: nifi-warehouse
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Read by db/init/04_ssis_fdw.sql via psql's \getenv -- the fdw user
+      # mapping needs the OTHER stack's Postgres password, not this one's.
+      SSIS_POSTGRES_PASSWORD: ${SSIS_POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    extra_hosts:
+      # Lets this warehouse read the SSIS warehouse through postgres_fdw
+      # (db/init/04_ssis_fdw.sql), which is what allows the comparison
+      # dashboard to JOIN the two engines instead of running two queries side
+      # by side and hoping they line up.
+      #
+      # Via the HOST gateway and his published port 5434, deliberately NOT by
+      # joining his Docker network: both stacks name their database service
+      # `postgres`, so putting this container on his network gives two
+      # containers the same alias there and his own code starts resolving
+      # `postgres` to this one. That breaks his stack with an authentication
+      # error that looks like a password problem and is not.
+      - "ssis-host:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  nifi:
+    image: apache/nifi:1.27.0
+    container_name: nifi-engine
+    environment:
+      # Unsecured HTTP: no login, no cert warning, open REST API (demo only)
+      NIFI_WEB_HTTP_PORT: "8080"
+      NIFI_WEB_HTTP_HOST: "0.0.0.0"
+      NIFI_JVM_HEAP_INIT: ${NIFI_HEAP_INIT}
+      NIFI_JVM_HEAP_MAX: ${NIFI_HEAP_MAX}
+      # Keep provenance small so the demo box stays happy
+      NIFI_PROVENANCE_REPO_MAX_STORAGE_SIZE: "512 MB"
+    ports:
+      - "${NIFI_PORT}:8080"
+    volumes:
+      - ./data:/opt/nifi/data
+      - ./nifi/drivers:/opt/nifi/drivers:ro
+      - nifi_conf:/opt/nifi/nifi-current/conf
+      - nifi_state:/opt/nifi/nifi-current/state
+      - nifi_db:/opt/nifi/nifi-current/database_repository
+      - nifi_flowfile:/opt/nifi/nifi-current/flowfile_repository
+      - nifi_content:/opt/nifi/nifi-current/content_repository
+      - nifi_provenance:/opt/nifi/nifi-current/provenance_repository
+      - nifi_logs:/opt/nifi/nifi-current/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/nifi-api/system-diagnostics > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    restart: unless-stopped
+
+  # One-shot: imports the flow definition, wires the DB password, starts the flow.
+  bootstrap:
+    build: ./generator
+    image: nifi-etl/toolkit:latest
+    container_name: nifi-flow-builder
+    command: ["python", "-m", "gen", "provision"]
+    environment:
+      NIFI_API: http://nifi:8080/nifi-api
+      FLOW_FILE: /flow/ecommerce_etl.flow.json
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB}
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      HIGH_VALUE_THRESHOLD: ${HIGH_VALUE_THRESHOLD}
+      SUSPICIOUS_QTY: ${SUSPICIOUS_QTY}
+    volumes:
+      - ./nifi/flow:/flow
+    depends_on:
+      nifi:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  generator:
+    build: ./generator
+    image: nifi-etl/toolkit:latest
+    container_name: shared-data-generator
+    command: ["python", "-m", "gen", "stream"]
+    environment:
+      # ONE generator, TWO inboxes. Every batch is serialised once and written
+      # to both under the same filename, so the engines are compared on
+      # identical bytes instead of on two similar-looking random streams.
+      LANDING_DIRS: /landing,/landing-ssis
+      BATCH_INTERVAL: ${BATCH_INTERVAL}
+      BATCH_SIZE: ${BATCH_SIZE}
+      ERROR_RATE: ${ERROR_RATE}
+      GEN_SEED: ${GEN_SEED}
+      # 0 while both engines are live: see the note in emit.stream()
+      FILE_FAULTS: ${FILE_FAULTS:-0}
+    volumes:
+      - ./data/landing:/landing
+      # the SSIS engine's inbox, on the host so both stacks can reach it
+      - ${SHARED_DATA:-/home/rajdeep/Desktop/Final/source/data}/landing:/landing-ssis
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  monitor:
+    build: ./generator
+    image: nifi-etl/toolkit:latest
+    container_name: nifi-monitor
+    command: ["python", "-m", "gen", "monitor"]
+    environment:
+      NIFI_API: http://nifi:8080/nifi-api
+      MONITOR_INTERVAL: ${MONITOR_INTERVAL}
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB}
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      DLQ_DIR: /dlq
+    volumes:
+      # read-only: the monitor mirrors file-level rejects into quarantine_records
+      # but must never delete the evidence you want to open during the demo
+      - ./data/dlq:/dlq:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: nifi-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: "1s"
+      PG_HOST: postgres:5432
+      PG_DB: ${POSTGRES_DB}
+      PG_USER: ${POSTGRES_USER}
+      PG_PASSWORD: ${POSTGRES_PASSWORD}
+      # One datasource is enough. Grafana used to hold a second one pointing
+      # straight at the SSIS warehouse, which meant joining that stack's
+      # Docker network; the comparison now reads it through postgres_fdw from
+      # this warehouse instead (db/init/04_ssis_fdw.sql), so his tables arrive
+      # as `ssis.*` on the SAME connection and this stack needs no knowledge
+      # of his networking at all.
+    ports:
+      - "${GRAFANA_PORT}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  grafana_data:
+  nifi_conf:
+  nifi_state:
+  nifi_db:
+  nifi_flowfile:
+  nifi_content:
+  nifi_provenance:
+  nifi_logs:

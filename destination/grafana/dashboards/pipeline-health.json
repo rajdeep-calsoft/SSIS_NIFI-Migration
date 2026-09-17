@@ -1,0 +1,754 @@
+{
+  "uid": "nifi-pipeline-health",
+  "title": "1 - Pipeline Health",
+  "description": "Is the NiFi ETL pipeline healthy right now? Four numbers, what it is doing, why it is refusing anything, and the per-file ledger.",
+  "tags": [
+    "nifi",
+    "etl",
+    "monitoring"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "5s",
+  "timezone": "browser",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "1s",
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m"
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Orders loaded",
+      "description": "Rows in the orders table.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "etl-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS v FROM orders",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "etl-postgres"
+          },
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#3987e5",
+                "value": null
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Records rejected",
+      "description": "Records the flow refused to load, across all reject reasons. A count, not a rate -- it only ever grows.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "etl-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS v FROM quarantine_records",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "etl-postgres"
+          },
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Reject rate",
+      "description": "Share of arriving lines refused. THIS is the health number, not the count beside it: a steady defect rate shows as a growing count but a flat percentage. Above 25% a batch is marked PARTIAL; 100% means nothing loaded at all.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "etl-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT CASE WHEN coalesce(sum(records_valid + records_invalid),0) = 0 THEN 0 ELSE round(100.0 * sum(records_invalid) / sum(records_valid + records_invalid), 2) END AS v FROM job_runs",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "etl-postgres"
+          },
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 25
+              },
+              {
+                "color": "#d03b3b",
+                "value": 90
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Failed files",
+      "description": "Files this engine could not process cleanly.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "etl-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS v FROM v_job_runs_recent WHERE status='FAILED'",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "etl-postgres"
+          },
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              },
+              {
+                "color": "#d03b3b",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Ingest throughput",
+      "description": "Lines landing in Postgres, by the time NiFi loaded them. A flat line here while rejects climb means the flow is stalled -- run `make smoke`, it will name the stopped processor.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "etl-postgres"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(ingest_ts, $__interval), count(*) AS \"lines loaded\" FROM order_items WHERE $__timeFilter(ingest_ts) GROUP BY 1 ORDER BY 1",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "etl-postgres"
+          },
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "lineInterpolation": "smooth",
+            "spanNulls": true,
+            "gradientMode": "opacity",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisSoftMin": 0
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "lines loaded"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "barchart",
+      "title": "Why records were rejected",
+      "description": "Each reason maps to a different processor in the flow. The SSIS board draws the same chart from its own warehouse, so the two can be read against each other.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "etl-postgres"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT reason, count(*) AS records FROM quarantine_records GROUP BY reason ORDER BY records DESC",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "etl-postgres"
+          },
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#fab219"
+          },
+          "custom": {
+            "lineWidth": 0,
+            "fillOpacity": 85,
+            "gradientMode": "none",
+            "axisSoftMin": 0,
+            "axisGridShow": false,
+            "axisBorderShow": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "barWidth": 0.58,
+        "barRadius": 0.25,
+        "showValue": "always",
+        "text": {
+          "valueSize": 12
+        },
+        "legend": {
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single"
+        },
+        "xTickLabelRotation": 0
+      }
+    },
+    {
+      "type": "table",
+      "title": "File ledger - one row per input file",
+      "description": "This engine's job ledger. Every file that arrived leaves a row. The SSIS board draws the same eight columns from control.stream_file, so the two line up row against row.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "etl-postgres"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT j.finished_at AS processed_at, j.source_file, j.status, j.records_valid + j.records_invalid AS lines_in, j.records_valid   AS lines_clean, j.records_invalid AS lines_rejected, j.orders_loaded, coalesce(r.revenue, 0) AS revenue FROM v_job_runs_recent j LEFT JOIN (SELECT batch_id, sum(line_total) AS revenue              FROM order_items GROUP BY batch_id) r        ON r.batch_id = j.batch_id ORDER BY j.finished_at DESC LIMIT 25",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "etl-postgres"
+          },
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": false,
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "RUNNING": {
+                        "color": "#3987e5",
+                        "index": 0,
+                        "text": "RUNNING"
+                      },
+                      "SUCCESS": {
+                        "color": "#0ca30c",
+                        "index": 1,
+                        "text": "SUCCESS"
+                      },
+                      "PASS": {
+                        "color": "#0ca30c",
+                        "index": 2,
+                        "text": "PASS"
+                      },
+                      "PARTIAL": {
+                        "color": "#fab219",
+                        "index": 3,
+                        "text": "PARTIAL"
+                      },
+                      "FAILED": {
+                        "color": "#d03b3b",
+                        "index": 4,
+                        "text": "FAILED"
+                      },
+                      "FAIL": {
+                        "color": "#d03b3b",
+                        "index": 5,
+                        "text": "FAIL"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "processed_at"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "time:YYYY-MM-DD HH:mm:ss"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "revenue"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyINR"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "processed_at"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 185
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "source_file"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 330
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        },
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "type": "table",
+      "title": "Rejection log - every record this engine refused",
+      "description": "The record, the reason, and the offending value -- newest first. The bar chart above counts these; this is the rows themselves. Same nine columns as the SSIS board.\n\nAll of it, in a shell:\n  make errors           both engines, with a reason diff\n  make errors-export    the same as CSV + JSON\n  docker compose exec postgres psql -U etl -d etldemo\n      SELECT * FROM quarantine_records ORDER BY id DESC;\n\nFor NiFi's OWN errors -- which are not rejects; a rejected record is the pipeline working correctly -- use `make logs S=nifi`, the canvas at :8080, or the nifi_bulletins table.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "etl-postgres"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('second', quarantined_at) AS at, order_id, line_no, sku, qty, unit_price, currency, reason, detail FROM quarantine_records ORDER BY quarantined_at DESC, id DESC LIMIT 25",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "etl-postgres"
+          },
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": false,
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "reason"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fab219"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "at"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "time:YYYY-MM-DD HH:mm:ss"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "at"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 185
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "order_id"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 245
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "line_no"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 85
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sku"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "qty"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "unit_price"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 105
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "currency"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 95
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "reason"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 175
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false
+        },
+        "cellHeight": "sm"
+      }
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+# Microsoft.Sort -> QueryRecord, dedup-only safe case
+#
+# Sort's general behaviour (re-ordering a stream) has no NiFi streaming
+# equivalent -- see catalog/support.py's REFUSED reason. Only the narrow case
+# `_sort_is_dedup_only` admits converts: EliminateDuplicates=true, with sort
+# key columns marked via `sortKeyPosition` on the input columns. That case
+# uses the exact ROW_NUMBER() OVER (PARTITION BY ...) technique already
+# proven in a live, running NiFi flow -- destination/generator/gen/build_flow.py's
+# own "8b. Dedupe" processor -- not invented for this recipe.
+#
+# BEST-EFFORT NOTICE: the SSIS-side property names this reads
+# (EliminateDuplicates, sortKeyPosition) follow the standard, documented SSIS
+# Sort transform shape, but were not harvested from a real SQL-Server-Data-
+# Tools-produced .dtsx -- none exists anywhere in this repo containing a Sort
+# component. If a real package ever exercises this path and something
+# disagrees, fix the property names here against that real file, the same way
+# every other recipe in this directory was built.
+#
+# Shares its shape with ConditionalSplit/DerivedColumn on purpose: one
+# QueryRecord, one dynamic property, wired by @dynamic:main. Row order beyond
+# "first key occurrence wins" is NOT preserved -- this is a dedup, not a sort.
+
+component_class: Microsoft.Sort
+rule_id: sort/v1
+support: narrow
+
+requires:
+  - derived.branches
+
+processors:
+  - id: main
+    kind: QueryRecord
+    name: "{{ node.name }}"
+    properties:
+      record-reader: "@service:reader"
+      record-writer: "@service:writer"
+      include-zero-record-flowfiles: "false"
+    properties_from: "derived.branches"
+    auto_terminate: ["original"]
+
+inputs:
+  "Sort Input": main
+
+outputs: "@dynamic:main"
+
+diagnostics:
+  - when: "derived.branches"
+    severity: info
+    code: SORT_DEDUP_ONLY
+    message: >-
+      Converted as a dedup (ROW_NUMBER() PARTITION BY the sort keys), not a
+      true sort -- downstream row order is NOT the same as SSIS's Sort would
+      produce, only "first occurrence of each key wins" is preserved.

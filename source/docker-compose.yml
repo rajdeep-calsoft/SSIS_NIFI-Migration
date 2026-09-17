@@ -1,0 +1,126 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: ssis-warehouse
+    environment:
+      POSTGRES_USER: etl_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env -- see .env.example}
+      POSTGRES_DB: etl_db
+    ports:
+      - "5434:5432"   # was 5433: NIFI-FLOW binds that. Container port unchanged.
+    volumes:
+      - etl_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U etl_user -d etl_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # The STREAM SOURCE: writes a new NDJSON order batch into /data/landing
+  # every BATCH_INTERVAL seconds. pkg_ingest_stage picks them up.
+  # NOTE: opt-in since the parallel-run work. When both engines are being
+  # compared, the NiFi repo's generator writes the SAME batch into this
+  # stack's landing dir and its own, so a second generator here would give
+  # this engine extra data the other one never sees. Start it explicitly for
+  # a solo demo:   docker compose --profile solo up -d orders_gen
+  orders_gen:
+    build: ./orders_stream
+    container_name: ssis-generator-solo
+    profiles: ["solo"]
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: etl_db
+      PGUSER: etl_user
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      LANDING_DIR: /data/landing
+      BATCH_INTERVAL: "15"
+      BATCH_SIZE: "50"
+      ERROR_RATE: "0.06"
+      GEN_SEED: "42"
+    volumes:
+      - ${SHARED_DATA:-/home/rajdeep/Desktop/Final/source/data}:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # SSIS processing engine: simulator + packages + stream runner + tests.
+  builder:
+    build: .
+    image: ssis-etl/engine:latest
+    container_name: ssis-toolbox
+    working_dir: /app
+    volumes:
+      - .:/app
+      - ${SHARED_DATA:-/home/rajdeep/Desktop/Final/source/data}:/data
+    environment:
+      PG_HOST: postgres
+      PG_PORT: 5432
+      PG_USER: etl_user
+      PG_PASS: ${POSTGRES_PASSWORD}
+      PG_DB: etl_db
+      DATA_DIR: /data
+      LANDING_DIR: /data/landing
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["sleep", "infinity"]
+
+  # The pipeline itself, running continuously: stream_daemon() polls the
+  # landing dir every STREAM_POLL seconds and processes whatever is new.
+  # That function was already in stream_runner.py -- it just had nothing
+  # calling it, so the engine only ever ran when orchestrate.py was invoked
+  # by hand. A live side-by-side against NiFi needs it always on.
+  #
+  # No rule changed: this runs the same _validate_stream as before.
+  stream_runner:
+    build: .
+    image: ssis-etl/engine:latest
+    container_name: ssis-engine
+    working_dir: /app
+    command: ["python", "-m", "ssis_sim.stream_runner"]
+    entrypoint: []
+    volumes:
+      - .:/app
+      - ${SHARED_DATA:-/home/rajdeep/Desktop/Final/source/data}:/data
+    environment:
+      PG_HOST: postgres
+      PG_PORT: 5432
+      PG_USER: etl_user
+      PG_PASS: ${POSTGRES_PASSWORD}
+      PG_DB: etl_db
+      DATA_DIR: /data
+      LANDING_DIR: /data/landing
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Monitoring / visualization of the live stream (data source: etl_db).
+  grafana:
+    image: grafana/grafana-oss:11.1.7
+    container_name: ssis-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SERVER_ROOT_URL: http://localhost:3001
+      PG_HOST: postgres:5432
+      PG_DB: etl_db
+      PG_USER: etl_user
+      PG_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  etl_pgdata:
+  grafana_data:

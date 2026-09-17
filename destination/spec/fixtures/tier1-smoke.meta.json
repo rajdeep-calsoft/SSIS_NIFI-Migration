@@ -1,0 +1,23 @@
+{
+  "name": "tier1-smoke",
+  "describe": "50 clean orders + one of each fault + a replay",
+  "base_ts": 1788264000000,
+  "base_ts_iso": "2026-09-01T12:00:00+00:00",
+  "orders": 58,
+  "lines": 106,
+  "faults": {
+    "bad_values": 1,
+    "duplicate_id": 1,
+    "late_timestamp": 1,
+    "missing_field": 1,
+    "unicode_currency": 1,
+    "unknown_customer": 1,
+    "unknown_sku": 1,
+    "unparseable_qty": 1,
+    "wrong_type": 1
+  },
+  "catalogue": {
+    "products": 18,
+    "customers": 60
+  }
+}

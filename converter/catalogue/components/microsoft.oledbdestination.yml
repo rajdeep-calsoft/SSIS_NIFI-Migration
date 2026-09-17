@@ -1,0 +1,68 @@
+# Microsoft.OLEDBDestination -> PutDatabaseRecord
+#
+# Property keys copied verbatim from "11. Load order items" in
+# ~/Desktop/NIFI-FLOW/nifi/flow/ecommerce_etl.flow.json, which is a
+# PutDatabaseRecord known to import and run against Postgres.
+
+component_class: Microsoft.OLEDBDestination
+also: ["{4ADA7EAA-136C-4215-8098-D7A7C27FC0D1}"]
+rule_id: oledbdest/v1
+support: full
+
+requires:
+  - connections.OleDbConnection
+  - derived.target_table
+
+services:
+  - key: "dbcp:{{ binding_id }}"
+    kind: DBCPConnectionPool
+    name: "{{ binding_id }}Pool"
+    properties:
+      Database Connection URL: "{{ binding.url }}"
+      Database Driver Class Name: "{{ binding.driver_class }}"
+      database-driver-locations: "{{ binding.driver_path }}"
+      Database User: "{{ binding.user }}"
+      Password: "@secret:{{ binding.password_ref }}"
+
+processors:
+  - id: main
+    kind: PutDatabaseRecord
+    name: "{{ node.name }}"
+    properties:
+      put-db-record-record-reader: "@service:reader"
+      put-db-record-dcbp-service: "@service:dbcp:{{ binding_id }}"
+      db-type: "{{ binding.db_type }}"
+      put-db-record-table-name: "{{ derived.target_table }}"
+      put-db-record-schema-name: "{{ derived.target_schema }}"
+      put-db-record-statement-type: INSERT
+      put-db-record-unmatched-field-behavior: Ignore Unmatched Fields
+      put-db-record-unmatched-column-behavior: Ignore Unmatched Columns
+      put-db-record-translate-field-names: "true"
+      put-db-record-max-batch-size: "{{ derived.batch_size }}"
+      rollback-on-failure: "false"
+    retry_relationships: [failure]
+    auto_terminate: [success]
+
+inputs:
+  "OLE DB Destination Input": main
+
+outputs:
+  "OLE DB Destination Error Output": {processor: main, relationship: failure}
+
+dangling_output_policy:
+  "OLE DB Destination Error Output":
+    - action: route_to_reject
+
+diagnostics:
+  - when: "properties.AccessMode == '1'"
+    severity: error
+    code: DEST_TABLE_FROM_VARIABLE
+    message: "Table name comes from an SSIS variable; NiFi needs it at generation time."
+  - when: "properties.FastLoadKeepIdentity == 'true'"
+    severity: warn
+    code: DEST_KEEP_IDENTITY
+    message: "KEEP IDENTITY has no PutDatabaseRecord equivalent; identity values will be regenerated."
+  - when: "derived.no_check_constraints"
+    severity: info
+    code: DEST_NO_CHECK_CONSTRAINTS
+    message: "SSIS bypasses constraint checking on fast load; the JDBC path does not."

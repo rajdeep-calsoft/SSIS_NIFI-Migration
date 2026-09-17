@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: 'nifi-etl-demo'
+    orgId: 1
+    folder: 'NiFi ETL Demo'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

@@ -1,0 +1,55 @@
+# Microsoft.ConditionalSplit -> QueryRecord, one dynamic property per branch
+#
+# QueryRecord has no built-in "else": every dynamic property is an
+# independent SQL WHERE run against the SAME input, not a sequential
+# if/elif chain. So the default (no-condition) branch is re-derived by
+# catalog/derive.py as "none of the named branches matched" -- the exact
+# mutually-exclusive-queries technique NIFI-FLOW's own build_flow.py uses
+# for its reject rules (see destination/spec/pipeline.yml's business_rules
+# stage). SSIS's per-branch condition text (`FriendlyExpression`) is
+# translated to SQL by catalog/expr.py -- a bounded subset, not a general
+# SSIS expression compiler; see that module's docstring for exactly what it
+# accepts and what it refuses.
+#
+# One processor handles however many branches the source component has:
+# `properties_from: derived.branches` merges in one dynamic property per
+# branch (computed by catalog/derive.py._conditional_split), and
+# `outputs: "@dynamic:main"` wires every SSIS output port to the
+# same-named relationship on that processor -- the recipe itself never
+# lists branch names, because it cannot know them in advance.
+#
+# Reads/writes the SAME shared reader/writer services every other record
+# processor in the flow uses (@service:reader / @service:writer, created by
+# the flat-file source's recipe) -- not a services block of its own.
+
+component_class: Microsoft.ConditionalSplit
+rule_id: conditionalsplit/v1
+support: full
+
+requires:
+  - derived.branches
+
+processors:
+  - id: main
+    kind: QueryRecord
+    name: "{{ node.name }}"
+    properties:
+      record-reader: "@service:reader"
+      record-writer: "@service:writer"
+      include-zero-record-flowfiles: "false"
+    properties_from: "derived.branches"
+    auto_terminate: ["original"]
+
+inputs:
+  "Conditional Split Input": main
+
+outputs: "@dynamic:main"
+
+diagnostics:
+  - when: "derived.default_output"
+    severity: info
+    code: CONDITIONALSPLIT_DEFAULT_DERIVED
+    message: >-
+      The default (no-expression) branch was re-derived as NOT(every named
+      branch) -- verify this against the source package's branch Order if the
+      branches are not truly mutually exclusive.

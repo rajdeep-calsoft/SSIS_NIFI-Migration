@@ -1,0 +1,36 @@
+# Microsoft.DerivedColumn -> QueryRecord, adding new columns via one query
+#
+# Only ADDS new columns (SELECT *, <expr> AS <name> ...); does not support
+# REPLACING an existing column in place, which would need real type
+# inference to get right (see catalog/expr.py's module docstring) and does
+# not occur in this converter's target packages.
+#
+# Shares its shape with ConditionalSplit's recipe on purpose: both are "one
+# QueryRecord, N dynamic properties, wired by @dynamic:main" -- here N is
+# always 1 (SSIS allows several derived columns per component; this treats
+# them as one query adding several fields at once, computed by
+# catalog/derive.py._derived_column). The FriendlyExpression on each new
+# output column is translated to SQL by catalog/expr.py.
+
+component_class: Microsoft.DerivedColumn
+rule_id: derivedcolumn/v1
+support: full
+
+requires:
+  - derived.branches
+
+processors:
+  - id: main
+    kind: QueryRecord
+    name: "{{ node.name }}"
+    properties:
+      record-reader: "@service:reader"
+      record-writer: "@service:writer"
+      include-zero-record-flowfiles: "false"
+    properties_from: "derived.branches"
+    auto_terminate: ["original"]
+
+inputs:
+  "Derived Column Input": main
+
+outputs: "@dynamic:main"

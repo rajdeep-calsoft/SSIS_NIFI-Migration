@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SSIS → NiFi Control Panel</title>
+<style>
+  :root {
+    /* Raging Beige / Sleuthe Yellow / Pink Leaf / Coral Pink -- a warm,
+       light, paper-like base in place of the dark graphite console.
+       Each brand color does one job: yellow is the one interactive
+       accent, pink-leaf a caution state, coral danger/stop -- "running"
+       is deliberately the SAME red, blinking hard rather than breathing,
+       a literal on-air light: the one thing on the page that must be
+       impossible to miss when a flow is live. */
+    --ink: #fff5d7; --panel: #fffdfa; --panel-2: #fff1ee; --well: #faf0d3;
+    --line: #d9c08a; --line-soft: #ecdcb0;
+    --paper: #3a2c1d; --dim: #8a7a5e; --dim-2: #a99873;
+    --accent: #feb300; --accent-dim: rgba(254,179,0,0.16); --accent-ink: #3a2c1d;
+    --sig-run: #ff3b3b; --sig-run-dim: rgba(255,59,59,0.16);
+    --sig-warn: #ffaaab; --sig-warn-dim: rgba(255,170,171,0.25);
+    --sig-bad: #ff5e6c; --sig-bad-dim: rgba(255,94,108,0.14);
+    --sig-off: #b8a67d;
+    --shadow: 0 1px 2px rgba(58,44,29,0.06), 0 14px 32px -16px rgba(58,44,29,0.22);
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 16px 64px; background: var(--ink); color: var(--paper);
+    font-family: var(--sans); -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  code, .mono { font-family: var(--mono); }
+
+  /* ---- header: plain, functional, no gradient text, no caps eyebrow ---- */
+  header.top { margin-bottom: 18px; }
+  .sysid {
+    font-family: var(--mono); font-size: 0.76rem; color: var(--dim-2);
+    margin: 0 0 10px;
+  }
+  h1 { font-size: 1.5rem; margin: 0 0 8px; font-weight: 700; letter-spacing: -0.01em; color: var(--paper); }
+  .subtitle { color: var(--dim); margin: 0; font-size: 0.9rem; line-height: 1.55; max-width: 68ch; }
+  .subtitle code { color: #a56a00; }
+
+  /* ---- status strip: flush instrument-panel readout, not a floating card ---- */
+  .strip {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 13px 0; margin: 22px 0 30px; border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 0.86rem;
+  }
+  .lamp { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--sig-off); }
+  .lamp.run { background: var(--sig-run); animation: blink-live 1s step-start infinite; }
+  .lamp.warn { background: var(--sig-warn); animation: breathe-warn 3.2s ease-in-out infinite; }
+  /* A hard on/off blink, not a soft glow -- an on-air light for "a flow is
+     RUNNING right now", the single most-scanned signal on the page. */
+  @keyframes blink-live {
+    0%, 49%   { opacity: 1; box-shadow: 0 0 6px 3px rgba(255,59,59,0.55); }
+    50%, 100% { opacity: 0.25; box-shadow: 0 0 0 0 rgba(255,59,59,0); }
+  }
+  @keyframes breathe-warn {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255,170,171,0.55); }
+    50%      { box-shadow: 0 0 5px 3px rgba(255,170,171,0.28); }
+  }
+  #live-summary strong { color: var(--paper); font-weight: 700; }
+
+  /* ---- console frame: ONE panel, hairline-divided sections, no card-per-thing ---- */
+  .console { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); }
+  section.zone { padding: 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  section.zone:last-child { border-bottom: none; }
+  section.zone.alt { background: var(--panel-2); }
+
+  .zone-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .zone-head h2 { font-size: 0.98rem; margin: 0; font-weight: 700; display: flex; align-items: baseline; gap: 9px; }
+  .zone-head h2 .idx { font-family: var(--mono); font-size: 0.82rem; color: var(--accent); font-weight: 700; }
+  .zone-head .hint { color: var(--dim); font-weight: 500; font-size: 0.8rem; }
+
+  p.fine { color: var(--dim); font-size: 0.86rem; line-height: 1.6; margin: 0 0 16px; max-width: 72ch; }
+
+  /* ---- controls: rectangular, restrained, accent reserved for the primary action ---- */
+  button {
+    font-family: var(--sans); border-radius: 6px; padding: 8px 14px; font-size: 0.85rem;
+    font-weight: 600; cursor: pointer; margin: 3px 6px 3px 0; border: 1px solid transparent;
+    transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: #d99700; }
+  button.primary:hover { background: #ffc233; }
+  button.secondary { background: var(--panel); color: var(--paper); border-color: var(--line); }
+  button.secondary:hover { border-color: var(--dim); background: var(--well); }
+  button.danger { background: var(--panel); color: var(--sig-bad); border-color: #f0a2a9; }
+  button.danger:hover { background: var(--sig-bad-dim); border-color: var(--sig-bad); }
+  button.tiny { padding: 5px 10px; font-size: 0.76rem; border-radius: 5px; }
+  button:disabled { opacity: 0.45; cursor: wait; }
+
+  select {
+    font-family: var(--sans); background: var(--well); color: var(--paper); border: 1px solid var(--line);
+    border-radius: 6px; padding: 9px 11px; font-size: 0.88rem; margin-bottom: 10px; width: 100%;
+  }
+  select:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .between { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+
+  /* ---- flow table: literal signal lamps, plain rows, no pill chrome ---- */
+  table { width: 100%; border-collapse: collapse; font-size: 0.87rem; }
+  td, th { text-align: left; padding: 10px 6px; border-bottom: 1px solid var(--line-soft); }
+  th { color: var(--dim); font-weight: 600; font-size: 0.74rem; }
+  tr:last-child td { border-bottom: none; }
+  td.name { font-family: var(--mono); font-weight: 600; font-size: 0.85rem; }
+  td.counts { color: var(--dim); font-family: var(--mono); font-size: 0.8rem; }
+  td.actions { text-align: right; white-space: nowrap; }
+  .state { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-weight: 700; font-size: 0.8rem; }
+  .state .lamp { width: 7px; height: 7px; }
+  .state.running { color: var(--sig-run); }
+  .state.running .lamp { background: var(--sig-run); animation: blink-live 1s step-start infinite; }
+  .state.stopped { color: var(--dim); } .state.stopped .lamp { background: var(--sig-off); }
+  .state.mixed   { color: var(--sig-warn); } .state.mixed .lamp { background: var(--sig-warn); }
+
+  pre {
+    background: var(--well); border: 1px solid var(--line); border-radius: 6px;
+    padding: 13px 14px; font-size: 0.78rem; overflow-x: auto; white-space: pre-wrap;
+    word-break: break-word; max-height: 340px; overflow-y: auto; color: #4a3c2c; font-family: var(--mono);
+  }
+  /* Result appearing is a direct answer to the button you just pressed --
+     the one place a reveal motion is earned, not decoration. */
+  pre.reveal { animation: reveal 0.28s ease both; }
+  @keyframes reveal { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+  .msg { font-family: var(--mono); font-size: 0.83rem; margin-top: 10px; min-height: 1.2em; transition: color 0.2s ease; }
+  .msg.ok { color: var(--sig-run); } .msg.err { color: var(--sig-bad); } .msg.warn { color: var(--sig-warn); }
+  .banner {
+    background: var(--sig-bad-dim); border: 1px solid rgba(255,94,108,0.35); color: var(--sig-bad);
+    border-radius: 6px; padding: 10px 13px; font-size: 0.84rem; margin-top: 12px; font-family: var(--mono);
+  }
+
+  /* A brief highlight on exactly the row a Start/Stop action targeted --
+     confirms what changed without announcing itself anywhere else. */
+  tr.just-changed { animation: row-flash 1.1s ease; }
+  @keyframes row-flash {
+    0%   { background: var(--accent-dim); }
+    100% { background: transparent; }
+  }
+
+  /* ---- links: a plain list, matching the console's hairline language ---- */
+  .linklist a {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 11px 2px; text-decoration: none; color: var(--paper);
+    border-bottom: 1px solid var(--line-soft); font-size: 0.9rem;
+  }
+  .linklist a:last-child { border-bottom: none; }
+  .linklist a:hover .t { color: var(--accent); }
+  .linklist .t { font-weight: 600; }
+  .linklist .u { font-family: var(--mono); color: var(--dim-2); font-size: 0.8rem; }
+
+  .footnote { text-align: left; color: var(--dim-2); font-size: 0.78rem; margin-top: 18px; font-family: var(--mono); }
+
+  @media (max-width: 560px) {
+    body { padding: 22px 12px 48px; }
+    section.zone { padding: 18px; }
+    th:nth-child(3), td:nth-child(3) { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .lamp.run, .lamp.warn, .state.running .lamp, pre.reveal, tr.just-changed { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <p class="sysid">ssis2nifi · middle-layer console · api@localhost:8088</p>
+  <h1>Control panel</h1>
+  <p class="subtitle">
+    Click buttons instead of curling. This talks to the same api the terminal commands in
+    <code>docs/9.end-to-end-demo-guide.md</code> use — nothing here does anything the terminal couldn't,
+    it's just fewer things to type.
+  </p>
+</header>
+
+<div class="strip">
+  <div id="hero-dot" class="lamp"></div>
+  <span id="live-summary">checking what's currently running…</span>
+</div>
+
+<div class="console">
+
+  <section class="zone">
+    <div class="zone-head">
+      <h2><span class="idx">01</span>Convert &amp; deploy your package</h2>
+    </div>
+    <select id="package-select"><option>loading…</option></select>
+    <div class="row">
+      <button class="primary" onclick="doConvert()">Convert</button>
+      <button class="secondary" onclick="doDeploy()">Deploy to destination NiFi</button>
+      <button class="secondary" onclick="refreshPackages()">Refresh package list</button>
+    </div>
+    <div id="convert-msg" class="msg"></div>
+    <pre id="convert-result" style="display:none"></pre>
+  </section>
+
+  <section class="zone alt">
+    <div class="zone-head">
+      <h2>Flows on this canvas <span class="hint">only one should be running</span></h2>
+      <div class="row" style="margin:0">
+        <button class="secondary tiny" onclick="refreshStatus()">Refresh</button>
+        <button class="danger tiny" onclick="stopAll()">Stop all</button>
+      </div>
+    </div>
+    <p class="fine">
+      Every package you convert &amp; deploy above lands here as its own group, named
+      <code>ssis2nifi-&lt;filename&gt;</code>. They all write the same warehouse tables, so more than
+      one running at once double-counts everything downstream. Stop or start any one directly below.
+    </p>
+    <table>
+      <thead><tr><th>Group</th><th>State</th><th>Processors</th><th></th></tr></thead>
+      <tbody id="flow-rows"><tr><td colspan="4" style="color:var(--dim)">loading…</td></tr></tbody>
+    </table>
+    <div id="status-warning"></div>
+    <div id="status-msg" class="msg"></div>
+  </section>
+
+  <section class="zone alt">
+    <div class="zone-head">
+      <h2><span class="idx">02</span>See it running</h2>
+    </div>
+    <div class="linklist">
+      <a href="http://localhost:8080/nifi" target="_blank">
+        <span class="t">Destination NiFi canvas</span><span class="u">:8080/nifi</span>
+      </a>
+      <a href="http://localhost:3000" target="_blank">
+        <span class="t">Destination Grafana</span><span class="u">:3000</span>
+      </a>
+      <a href="http://localhost:3001" target="_blank">
+        <span class="t">Source Grafana</span><span class="u">:3001</span>
+      </a>
+      <a href="/docs" target="_blank">
+        <span class="t">This api's own docs</span><span class="u">:8088/docs</span>
+      </a>
+      <a href="/export/rejects.csv">
+        <span class="t">Download rejected records (CSV)</span><span class="u">every reject, both engines, full detail</span>
+      </a>
+    </div>
+  </section>
+
+</div>
+
+<p class="footnote">exactly one flow live on destination NiFi at a time — enforced on every deploy</p>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail || res.statusText);
+  return body;
+}
+
+function stateClass(state) {
+  return state === "RUNNING" ? "running" : state === "MIXED" ? "mixed" : "stopped";
+}
+
+async function refreshStatus() {
+  $("status-warning").innerHTML = "";
+  try {
+    const data = await api("/flow-status");
+    if (!data.groups.length) {
+      $("flow-rows").innerHTML = `<tr><td colspan="4" style="color:var(--dim)">no process group on the canvas yet — deploy something in 01.</td></tr>`;
+      $("live-summary").textContent = "Nothing is deployed on the NiFi canvas yet.";
+      $("hero-dot").className = "lamp";
+      return;
+    }
+    $("flow-rows").innerHTML = data.groups.map(g => `
+      <tr>
+        <td class="name">${g.name}</td>
+        <td><span class="state ${stateClass(g.state)}"><span class="lamp"></span>${g.state.toLowerCase()}</span></td>
+        <td class="counts">${g.running} run / ${g.stopped} stop / ${g.invalid} invalid</td>
+        <td class="actions">
+          <button class="secondary tiny" onclick="startGroup('${g.name}')">Start</button>
+          <button class="danger tiny" onclick="stopGroup('${g.name}')">Stop</button>
+        </td>
+      </tr>`).join("");
+
+    if (data.warning) {
+      $("status-warning").innerHTML = `<div class="banner">! ${data.warning}</div>`;
+    }
+    const running = data.groups.filter(g => g.state === "RUNNING").map(g => g.name);
+    const dot = $("hero-dot");
+    if (running.length === 0) {
+      dot.className = "lamp";
+      $("live-summary").innerHTML = `live: <strong>nothing</strong> — every flow is stopped`;
+    } else if (running.length === 1) {
+      dot.className = "lamp run";
+      $("live-summary").innerHTML = `live: <strong>${running[0]}</strong>`;
+    } else {
+      dot.className = "lamp warn";
+      $("live-summary").innerHTML = `! <strong>${running.length} flows</strong> running at once (${running.join(", ")})`;
+    }
+  } catch (e) {
+    $("flow-rows").innerHTML = `<tr><td colspan="4" style="color:var(--sig-bad)">could not reach destination NiFi: ${e.message}</td></tr>`;
+    $("live-summary").textContent = `could not reach destination NiFi: ${e.message}`;
+    $("hero-dot").className = "lamp";
+  }
+}
+
+async function refreshPackages() {
+  const sel = $("package-select");
+  sel.innerHTML = "<option>loading…</option>";
+  try {
+    const data = await api("/packages");
+    sel.innerHTML = data.packages.map(p => `<option value="${p}">${p}</option>`).join("");
+    const preferred = [...sel.options].find(o => o.value === "pkg_orders_etl.dtsx");
+    if (preferred) sel.value = preferred.value;
+  } catch (e) {
+    sel.innerHTML = `<option>error: ${e.message}</option>`;
+  }
+}
+
+function setBusy(msgId, text) {
+  $(msgId).className = "msg";
+  $(msgId).textContent = text;
+}
+function setResult(msgId, state, text) {
+  const cls = state === "warn" ? "warn" : state ? "ok" : "err";
+  $(msgId).className = "msg " + cls;
+  $(msgId).textContent = text;
+}
+
+function revealResult(text) {
+  const el = $("convert-result");
+  el.style.display = "block";
+  el.textContent = text;
+  el.classList.remove("reveal");
+  void el.offsetWidth;  // restart the animation even if it just played
+  el.classList.add("reveal");
+}
+
+function flashRow(name) {
+  for (const tr of document.querySelectorAll("#flow-rows tr")) {
+    const cell = tr.querySelector("td.name");
+    if (cell && cell.textContent === name) tr.classList.add("just-changed");
+  }
+}
+
+async function doConvert() {
+  const pkg = $("package-select").value;
+  setBusy("convert-msg", `converting ${pkg}…`);
+  $("convert-result").style.display = "none";
+  try {
+    const data = await api("/convert", {
+      method: "POST", headers: {"content-type": "application/json"},
+      body: JSON.stringify({package: pkg}),
+    });
+    setResult("convert-msg", data.exit_code === 0, data.exit_meaning || "done");
+    revealResult(JSON.stringify(data, null, 2));
+  } catch (e) {
+    setResult("convert-msg", false, e.message);
+  }
+}
+
+async function doDeploy() {
+  const pkg = $("package-select").value;
+  setBusy("convert-msg", `deploying ${pkg} onto destination NiFi… (a few seconds)`);
+  $("convert-result").style.display = "none";
+  try {
+    const data = await api("/deploy", {
+      method: "POST", headers: {"content-type": "application/json"},
+      body: JSON.stringify({package: pkg}),
+    });
+    const unsettled = (data.stopped_other_flows || []).some(s => !s.settled);
+    setResult("convert-msg", unsettled ? "warn" : true, data.message || "deployed");
+    revealResult(JSON.stringify(data, null, 2));
+    await refreshStatus();
+    flashRow(pkg.replace(/\.dtsx$/, "").replace(/^/, "ssis2nifi-"));
+  } catch (e) {
+    setResult("convert-msg", false, e.message);
+  }
+}
+
+async function stopGroup(name) {
+  setBusy("status-msg", `stopping ${name}… (waiting to confirm)`);
+  try {
+    const data = await api("/flow/stop", {
+      method: "POST", headers: {"content-type": "application/json"},
+      body: JSON.stringify({group_name: name}),
+    });
+    if (data.settled === false) {
+      setResult("status-msg", "warn", `${name} still finishing a large in-flight batch -- can take minutes, check back`);
+    } else {
+      setResult("status-msg", true, `${name} stopped`);
+    }
+  } catch (e) {
+    setResult("status-msg", false, e.message);
+  }
+  await refreshStatus();
+  flashRow(name);
+}
+
+async function startGroup(name) {
+  setBusy("status-msg", `starting ${name}… (stops anything else running first)`);
+  try {
+    const data = await api("/flow/start", {
+      method: "POST", headers: {"content-type": "application/json"},
+      body: JSON.stringify({group_name: name}),
+    });
+    const stopped = (data.stopped_other_flows || []).map(s => s.group_name);
+    setResult("status-msg", true, stopped.length ? `${name} started (stopped: ${stopped.join(", ")})` : `${name} started`);
+  } catch (e) {
+    setResult("status-msg", false, e.message);
+  }
+  await refreshStatus();
+  flashRow(name);
+}
+
+async function stopAll() {
+  setBusy("status-msg", "stopping every flow on the canvas…");
+  try {
+    const data = await api("/flow/stop-all", {
+      method: "POST", headers: {"content-type": "application/json"}, body: "{}",
+    });
+    const names = (data.stopped_flows || []).map(s => s.group_name);
+    setResult("status-msg", true, names.length ? `stopped: ${names.join(", ")}` : "nothing was running");
+    await refreshStatus();
+    names.forEach(flashRow);
+  } catch (e) {
+    setResult("status-msg", false, e.message);
+    refreshStatus();
+  }
+}
+
+refreshStatus();
+refreshPackages();
+setInterval(refreshStatus, 6000);
+</script>
+</body>
+</html>

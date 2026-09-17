@@ -1,0 +1,87 @@
+# How to read each engine's warehouse into the same neutral shape.
+#
+# The two engines store completely different tables -- NiFi writes `orders` and
+# `quarantine_records`, the SSIS side writes `dw.fact_sales` and
+# `control.dlq_errors`. Nothing can be compared table to table. So each engine
+# gets an adapter whose queries return the SAME five answers, and the comparison
+# happens on those answers instead of on the schemas.
+#
+# Every query must return exactly the shape its section declares:
+#   scalars    -> one row, one column, a number
+#   histograms -> rows of (label, count)
+#   sets       -> rows of one text column, used for set difference
+#
+# Adding an engine means adding a block here. Nothing else changes.
+
+nifi:
+  describe: the NiFi pipeline in this repository
+  compose_file: docker-compose.yml          # relative to the repo root
+  service: postgres
+  psql: [psql, -U, etl, -d, etldemo]
+
+  scalars:
+    orders:      select count(*) from orders
+    order_items: select count(*) from order_items
+    alerts:      select count(*) from alerts
+    rejects:     select count(*) from quarantine_records
+    files:       select count(*) from job_runs
+
+  histograms:
+    rejects_by_reason: select reason, count(*) from quarantine_records group by 1
+    alerts_by_type:    select alert_type, count(*) from alerts group by 1
+
+  sets:
+    # order ids that were actually loaded -- the set difference against the
+    # other engine is the real answer to "did we load the same things?"
+    loaded_order_ids: select distinct order_id from orders
+    # one line per rejected record, keyed so the two engines line up even
+    # though their reject tables look nothing alike
+    reject_keys: >
+      select coalesce(order_id,'') || '|' || coalesce(line_no,'') || '|' || reason
+      from quarantine_records
+    # the check that actually answers "did we load the same rows", not just the
+    # same orders
+    loaded_line_keys: >
+      select order_id || '|' || line_no::text from order_items
+
+ssis:
+  describe: the SSIS simulator at ../source
+  compose_file: ../source/docker-compose.yml
+  service: postgres
+  psql: [psql, -U, etl_user, -d, etl_db]
+
+  # Credentials read from his docker-compose.yml: etl_user / etl_pass / etl_db.
+  # (An earlier version of this block guessed `postgres` / `etl_dw` and was
+  # wrong on both counts -- it had never been run.)
+  #
+  # His stack now binds host 5434, not 5433, so both engines can be up at once.
+  # These queries still go through `docker compose exec`, not the host port, so
+  # the port move does not affect them.
+  scalars:
+    orders:      select count(distinct order_id) from dw.fact_sales
+    order_items: select count(*) from dw.fact_sales
+    alerts:      select count(*) from control.stream_alerts
+    rejects:     select count(*) from control.dlq_errors
+    files:       select count(*) from control.stream_file
+
+  histograms:
+    rejects_by_reason: select error_type, count(*) from control.dlq_errors group by 1
+    alerts_by_type:    select alert_type, count(*) from control.stream_alerts group by 1
+
+  sets:
+    loaded_order_ids: select distinct order_id from dw.fact_sales
+    # `dlq_errors` has no line_no column -- it lives in the JSONB payload, which
+    # is the whole original record. `source_row_id` is a row ordinal within the
+    # file and does NOT line up with the other engine's line_no.
+    reject_keys: >
+      select coalesce(order_id,'') || '|'
+             || coalesce(raw_payload->>'line_no','') || '|' || error_type
+      from control.dlq_errors
+    # NOT from dw.fact_sales: its `order_line_id` is `order_id#source_row`, a
+    # file ordinal, and the fact table carries no line_no at all. line_no
+    # survives only in stage.clean_sales.notes -- which is also the table the
+    # DUP_KEY losers are deleted from, so it reflects what actually loaded.
+    loaded_line_keys: >
+      select coalesce(order_id,'') || '|'
+             || coalesce(notes::json->>'line_no','')
+      from stage.clean_sales

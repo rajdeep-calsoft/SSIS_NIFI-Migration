@@ -1,0 +1,528 @@
+apiVersion: engine-binding/v1
+engine: nifi
+engine_version: 1.27.0
+implements: pipeline-spec/v1
+extracted_from: nifi/flow/ecommerce_etl.flow.json
+generated_by: spec/extract_nifi.py — do not hand-edit
+runtime:
+  controller_services:
+  - name: CustomerLookup
+    type: org.apache.nifi.lookup.db.DatabaseRecordLookupService
+    properties:
+      dbrecord-lookup-dbcp-service: service:PostgresPool
+      dbrecord-lookup-clear-cache-on-enabled: 'true'
+      dbrecord-lookup-cache-size: '1000'
+      dbrecord-lookup-value-columns: country,segment
+      dbrecord-lookup-key-column: customer_id
+      Cache Expiration: 5 mins
+      dbrecord-lookup-table-name: customers
+  - name: InferReader
+    type: org.apache.nifi.json.JsonTreeReader
+    properties:
+      Max String Length: 20 MB
+      schema-application-strategy: SELECTED_PART
+      schema-name: ${schema.name}
+      starting-field-strategy: ROOT_NODE
+      Allow Comments: 'false'
+  - name: JsonWriter
+    type: org.apache.nifi.json.JsonRecordSetWriter
+    properties:
+      Allow Scientific Notation: 'false'
+      compression-level: '1'
+      Timestamp Format: yyyy-MM-dd'T'HH:mm:ss'Z'
+      Pretty Print JSON: 'false'
+      compression-format: none
+      Schema Write Strategy: no-schema
+      suppress-nulls: never-suppress
+      output-grouping: output-array
+      schema-name: ${schema.name}
+      schema-protocol-version: '1'
+  - name: OrderSchemas
+    type: org.apache.nifi.schemaregistry.services.AvroSchemaRegistry
+    properties:
+      avro-reg-validated-field-names: 'true'
+      order_line: '{"type": "record", "name": "order_line", "fields": [{"name": "order_id", "type": "string"},
+        {"name": "line_no", "type": "int"}, {"name": "customer_id", "type": "string"}, {"name": "order_ts",
+        "type": "long"}, {"name": "order_ts_iso", "type": ["null", "string"], "default": null}, {"name":
+        "status", "type": "string"}, {"name": "channel", "type": "string"}, {"name": "payment_type", "type":
+        ["null", "string"], "default": null}, {"name": "currency", "type": "string"}, {"name": "sku",
+        "type": "string"}, {"name": "qty", "type": "int"}, {"name": "unit_price", "type": "double"}, {"name":
+        "line_total", "type": "double"}]}'
+      quarantine_record: '{"type": "record", "name": "quarantine_record", "fields": [{"name": "reason",
+        "type": ["null", "string"], "default": null}, {"name": "detail", "type": ["null", "string"], "default":
+        null}, {"name": "batch_id", "type": ["null", "string"], "default": null}, {"name": "source_file",
+        "type": ["null", "string"], "default": null}, {"name": "order_id", "type": ["null", "string"],
+        "default": null}, {"name": "line_no", "type": ["null", "string"], "default": null}, {"name": "customer_id",
+        "type": ["null", "string"], "default": null}, {"name": "order_ts", "type": ["null", "string"],
+        "default": null}, {"name": "sku", "type": ["null", "string"], "default": null}, {"name": "qty",
+        "type": ["null", "string"], "default": null}, {"name": "unit_price", "type": ["null", "string"],
+        "default": null}, {"name": "line_total", "type": ["null", "string"], "default": null}, {"name":
+        "currency", "type": ["null", "string"], "default": null}, {"name": "status", "type": ["null",
+        "string"], "default": null}, {"name": "channel", "type": ["null", "string"], "default": null}]}'
+  - name: PostgresPool
+    type: org.apache.nifi.dbcp.DBCPConnectionPool
+    properties:
+      dbcp-min-idle-conns: '0'
+      Max Wait Time: 500 millis
+      Database Driver Class Name: org.postgresql.Driver
+      dbcp-min-evictable-idle-time: 30 mins
+      Max Total Connections: '12'
+      dbcp-max-conn-lifetime: '-1'
+      Database Connection URL: jdbc:postgresql://postgres:5432/etldemo
+      dbcp-time-between-eviction-runs: '-1'
+      Database User: etl
+      dbcp-soft-min-evictable-idle-time: '-1'
+      database-driver-locations: /opt/nifi/drivers
+      dbcp-max-idle-conns: '8'
+  - name: ProductLookup
+    type: org.apache.nifi.lookup.db.DatabaseRecordLookupService
+    properties:
+      dbrecord-lookup-dbcp-service: service:PostgresPool
+      dbrecord-lookup-clear-cache-on-enabled: 'true'
+      dbrecord-lookup-cache-size: '500'
+      dbrecord-lookup-value-columns: category
+      dbrecord-lookup-key-column: sku
+      Cache Expiration: 5 mins
+      dbrecord-lookup-table-name: products
+  - name: QuarantineWriter
+    type: org.apache.nifi.json.JsonRecordSetWriter
+    properties:
+      Allow Scientific Notation: 'false'
+      compression-level: '1'
+      Pretty Print JSON: 'false'
+      compression-format: none
+      Schema Write Strategy: no-schema
+      suppress-nulls: always-suppress
+      output-grouping: output-array
+      schema-name: quarantine_record
+      schema-registry: service:OrderSchemas
+      schema-protocol-version: '1'
+  - name: ReplayLookup
+    type: org.apache.nifi.lookup.db.DatabaseRecordLookupService
+    properties:
+      dbrecord-lookup-dbcp-service: service:PostgresPool
+      dbrecord-lookup-clear-cache-on-enabled: 'true'
+      dbrecord-lookup-cache-size: '0'
+      dbrecord-lookup-value-columns: already_loaded
+      dbrecord-lookup-key-column: order_line_id
+      dbrecord-lookup-table-name: v_loaded_line_keys
+stages:
+  ingest:
+  - name: 1. List landing files
+    type: org.apache.nifi.processors.standard.ListFile
+    properties:
+      File Filter: .*\.json
+      Input Directory: /opt/nifi/data/landing
+    relationships:
+      success: 2. Fetch file
+  - name: 2. Fetch file
+    type: org.apache.nifi.processors.standard.FetchFile
+    properties:
+      Move Conflict Strategy: Rename
+      Move Destination Directory: /opt/nifi/data/archive
+      File to Fetch: ${absolute.path}/{{ source_file }}
+      Completion Strategy: Move File
+    relationships:
+      failure: 17. Park failures in DLQ
+      success: 3. Stamp batch id
+  - name: 3. Stamp batch id
+    type: org.apache.nifi.processors.attributes.UpdateAttribute
+    properties:
+      batch_id: ${filename:substringBeforeLast('.')}
+      ingest_start: '{{ now() }}'
+      source_file: '{{ source_file }}'
+    relationships:
+      success: '3b. Guard: empty file'
+  guard_empty:
+  - name: '3b. Guard: empty file'
+    type: org.apache.nifi.processors.standard.RouteOnAttribute
+    properties:
+      Routing Strategy: Route to Property name
+      empty: ${fileSize:lt(1)}
+    relationships:
+      empty: 17. Park failures in DLQ
+      unmatched: 3c. Required fields
+  require_fields:
+  - name: 3c. Required fields
+    type: org.apache.nifi.processors.standard.QueryRecord
+    properties:
+      null_critical: SELECT * FROM FLOWFILE WHERE order_id IS NULL OR CAST(order_id AS VARCHAR) = '' OR
+        sku IS NULL OR CAST(sku AS VARCHAR) = '' OR customer_id IS NULL OR CAST(customer_id AS VARCHAR)
+        = '' OR qty IS NULL OR CAST(qty AS VARCHAR) = '' OR unit_price IS NULL OR CAST(unit_price AS VARCHAR)
+        = '' OR order_ts IS NULL OR CAST(order_ts AS VARCHAR) = ''
+      record-writer: service:JsonWriter
+      record-reader: service:InferReader
+      present: SELECT * FROM FLOWFILE WHERE NOT (order_id IS NULL OR CAST(order_id AS VARCHAR) = '' OR
+        sku IS NULL OR CAST(sku AS VARCHAR) = '' OR customer_id IS NULL OR CAST(customer_id AS VARCHAR)
+        = '' OR qty IS NULL OR CAST(qty AS VARCHAR) = '' OR unit_price IS NULL OR CAST(unit_price AS VARCHAR)
+        = '' OR order_ts IS NULL OR CAST(order_ts AS VARCHAR) = '')
+    relationships:
+      null_critical: R1. reason NULL_CRITICAL
+      failure: 17. Park failures in DLQ
+      present: 4. Validate against schema
+  validate:
+  - name: 4. Validate against schema
+    type: org.apache.nifi.processors.standard.ValidateRecord
+    properties:
+      strict-type-checking: 'true'
+      schema-name: order_line
+      record-writer: service:JsonWriter
+      schema-registry: service:OrderSchemas
+      validation-details-attribute-name: validation.details
+      record-reader: service:InferReader
+    relationships:
+      failure: 17. Park failures in DLQ
+      invalid: R1b. reason PARSE_ERROR
+      valid: 5. Enrich category / check SKU
+  enrich_product:
+  - name: 5. Enrich category / check SKU
+    type: org.apache.nifi.processors.standard.LookupRecord
+    properties:
+      routing-strategy: route-to-matched-unmatched
+      result-record-path: /
+      record-writer: service:JsonWriter
+      record-reader: service:InferReader
+      lookup-service: service:ProductLookup
+      key: /sku
+    relationships:
+      failure: 17. Park failures in DLQ
+      matched: 6. Enrich country / check customer
+      unmatched: R2. reason UNKNOWN_SKU
+    retry:
+      relationships:
+      - failure
+      count: 5
+      backoff: 30 secs
+  enrich_customer:
+  - name: 6. Enrich country / check customer
+    type: org.apache.nifi.processors.standard.LookupRecord
+    properties:
+      routing-strategy: route-to-matched-unmatched
+      result-record-path: /
+      record-writer: service:JsonWriter
+      record-reader: service:InferReader
+      lookup-service: service:CustomerLookup
+      key: /customer_id
+    relationships:
+      matched: 7. Business rules
+      unmatched: R3. reason UNKNOWN_CUSTOMER
+      failure: 17. Park failures in DLQ
+    retry:
+      relationships:
+      - failure
+      count: 5
+      backoff: 30 secs
+  business_rules:
+  - name: 7. Business rules
+    type: org.apache.nifi.processors.standard.QueryRecord
+    properties:
+      range_violation: SELECT * FROM FLOWFILE WHERE NOT (qty >= 1 AND qty <= 999 AND unit_price >= 0.01
+        AND unit_price <= 9999.99)
+      bad_currency: SELECT * FROM FLOWFILE WHERE qty >= 1 AND qty <= 999 AND unit_price >= 0.01 AND unit_price
+        <= 9999.99 AND order_ts BETWEEN {{ now_minus_days(365) }} AND {{ now_plus_days(365) }} AND NOT
+        (UPPER(currency) IN ('INR','USD','EUR','GBP'))
+      bad_timestamp: SELECT * FROM FLOWFILE WHERE qty >= 1 AND qty <= 999 AND unit_price >= 0.01 AND unit_price
+        <= 9999.99 AND NOT (order_ts BETWEEN {{ now_minus_days(365) }} AND {{ now_plus_days(365) }})
+      record-writer: service:JsonWriter
+      record-reader: service:InferReader
+      clean: SELECT * FROM FLOWFILE WHERE qty >= 1 AND qty <= 999 AND unit_price >= 0.01 AND unit_price
+        <= 9999.99 AND order_ts BETWEEN {{ now_minus_days(365) }} AND {{ now_plus_days(365) }} AND UPPER(currency)
+        IN ('INR','USD','EUR','GBP')
+    relationships:
+      failure: 17. Park failures in DLQ
+      clean: 8b. Dedupe on (order_id, line_no)
+      bad_timestamp: R6. reason BAD_TIMESTAMP
+      range_violation: R4. reason RANGE_VIOLATION
+      bad_currency: R5. reason BAD_CURRENCY
+  dedupe:
+  - name: 8b. Dedupe on (order_id, line_no)
+    type: org.apache.nifi.processors.standard.QueryRecord
+    properties:
+      dup_key: SELECT * FROM (SELECT FLOWFILE.*, ROW_NUMBER() OVER ( PARTITION BY order_id, line_no ORDER
+        BY order_id) AS dup_rank FROM FLOWFILE) WHERE dup_rank > 1
+      record-writer: service:JsonWriter
+      unique: SELECT t.*, t.order_id || '#' || CAST(t.line_no AS VARCHAR) AS order_line_id FROM (SELECT
+        FLOWFILE.*, ROW_NUMBER() OVER ( PARTITION BY order_id, line_no ORDER BY order_id) AS dup_rank
+        FROM FLOWFILE) t WHERE t.dup_rank = 1
+      record-reader: service:InferReader
+    relationships:
+      unique: 8c. Check replay (order_id, line_no)
+      failure: 17. Park failures in DLQ
+      dup_key: R7. reason DUP_KEY
+  - name: 8c. Check replay (order_id, line_no)
+    type: org.apache.nifi.processors.standard.LookupRecord
+    properties:
+      routing-strategy: route-to-matched-unmatched
+      result-record-path: /
+      record-writer: service:JsonWriter
+      record-reader: service:InferReader
+      lookup-service: service:ReplayLookup
+      key: /order_line_id
+    relationships:
+      failure: 17. Park failures in DLQ
+      matched: R7. reason DUP_KEY
+      unmatched: 9. Project line items
+    retry:
+      relationships:
+      - failure
+      count: 5
+      backoff: 30 secs
+  aggregate_orders:
+  - name: 8. Aggregate orders + alert rules
+    type: org.apache.nifi.processors.standard.QueryRecord
+    properties:
+      high_value: SELECT 'HIGH_VALUE' AS alert_type, 'WARN' AS severity, order_id, customer_id, CAST(line_total
+        AS DOUBLE) AS metric_value, 'line total above threshold' AS detail, '{{ batch_id }}' AS batch_id
+        FROM FLOWFILE WHERE line_total > 500
+      record-writer: service:JsonWriter
+      record-reader: service:InferReader
+      orders: SELECT order_id, MAX(customer_id) AS customer_id, MAX(order_ts) AS order_ts, MAX(status)
+        AS status, MAX(channel) AS channel, MAX(payment_type) AS payment_type, MAX(currency) AS currency,
+        MAX(country) AS country, MAX(segment) AS segment, SUM(line_total) AS order_total, SUM(qty) AS
+        item_count, '{{ batch_id }}' AS batch_id, '{{ source_file }}' AS source_file FROM FLOWFILE GROUP
+        BY order_id
+      suspicious: SELECT 'SUSPICIOUS_QTY' AS alert_type, 'CRITICAL' AS severity, order_id, customer_id,
+        CAST(qty AS DOUBLE) AS metric_value, 'line quantity far above normal' AS detail, '{{ batch_id
+        }}' AS batch_id FROM FLOWFILE WHERE qty > 50
+    relationships:
+      high_value: 12. Load alerts
+      suspicious: 12. Load alerts
+      failure: 17. Park failures in DLQ
+      orders: 10. Load orders
+  project_items:
+  - name: 9. Project line items
+    type: org.apache.nifi.processors.standard.QueryRecord
+    properties:
+      record-writer: service:JsonWriter
+      record-reader: service:InferReader
+      items: SELECT order_id, line_no, sku, qty, unit_price, line_total, category, '{{ batch_id }}' AS
+        batch_id FROM FLOWFILE
+    relationships:
+      items: 11. Load order items
+      failure: 17. Park failures in DLQ
+  load:
+  - name: 10. Load orders
+    type: org.apache.nifi.processors.standard.PutDatabaseRecord
+    properties:
+      put-db-record-unmatched-column-behavior: Ignore Unmatched Columns
+      put-db-record-dcbp-service: service:PostgresPool
+      put-db-record-statement-type: UPSERT
+      db-type: PostgreSQL
+      put-db-record-update-keys: order_id
+      put-db-record-table-name: orders
+      put-db-record-unmatched-field-behavior: Ignore Unmatched Fields
+      put-db-record-record-reader: service:InferReader
+    relationships:
+      failure: 17. Park failures in DLQ
+      success: 13. Record job run
+      retry: (self — retry)
+    retry:
+      relationships:
+      - failure
+      count: 5
+      backoff: 30 secs
+  - name: 11. Load order items
+    type: org.apache.nifi.processors.standard.PutDatabaseRecord
+    properties:
+      put-db-record-unmatched-column-behavior: Ignore Unmatched Columns
+      put-db-record-dcbp-service: service:PostgresPool
+      put-db-record-statement-type: UPSERT
+      db-type: PostgreSQL
+      put-db-record-update-keys: order_id,line_no
+      put-db-record-table-name: order_items
+      put-db-record-unmatched-field-behavior: Ignore Unmatched Fields
+      put-db-record-record-reader: service:InferReader
+    relationships:
+      failure: 17. Park failures in DLQ
+      retry: (self — retry)
+      success: 19. Record loaded lines
+    retry:
+      relationships:
+      - failure
+      count: 5
+      backoff: 30 secs
+  - name: 12. Load alerts
+    type: org.apache.nifi.processors.standard.PutDatabaseRecord
+    properties:
+      put-db-record-unmatched-column-behavior: Ignore Unmatched Columns
+      put-db-record-dcbp-service: service:PostgresPool
+      put-db-record-statement-type: INSERT
+      db-type: PostgreSQL
+      put-db-record-table-name: alerts
+      put-db-record-unmatched-field-behavior: Ignore Unmatched Fields
+      put-db-record-record-reader: service:InferReader
+    relationships:
+      failure: 17. Park failures in DLQ
+      retry: (self — retry)
+    retry:
+      relationships:
+      - failure
+      count: 5
+      backoff: 30 secs
+  quarantine:
+  - name: R1. reason NULL_CRITICAL
+    type: org.apache.nifi.processors.attributes.UpdateAttribute
+    properties:
+      quarantine_reason: NULL_CRITICAL
+    relationships:
+      success: 14. Stamp reject reason
+  - name: R1b. reason PARSE_ERROR
+    type: org.apache.nifi.processors.attributes.UpdateAttribute
+    properties:
+      quarantine_reason: PARSE_ERROR
+    relationships:
+      success: 14. Stamp reject reason
+  - name: R2. reason UNKNOWN_SKU
+    type: org.apache.nifi.processors.attributes.UpdateAttribute
+    properties:
+      quarantine_reason: UNKNOWN_SKU
+    relationships:
+      success: 14. Stamp reject reason
+  - name: R3. reason UNKNOWN_CUSTOMER
+    type: org.apache.nifi.processors.attributes.UpdateAttribute
+    properties:
+      quarantine_reason: UNKNOWN_CUSTOMER
+    relationships:
+      success: 14. Stamp reject reason
+  - name: R4. reason RANGE_VIOLATION
+    type: org.apache.nifi.processors.attributes.UpdateAttribute
+    properties:
+      quarantine_reason: RANGE_VIOLATION
+    relationships:
+      success: 14. Stamp reject reason
+  - name: R5. reason BAD_CURRENCY
+    type: org.apache.nifi.processors.attributes.UpdateAttribute
+    properties:
+      quarantine_reason: BAD_CURRENCY
+    relationships:
+      success: 14. Stamp reject reason
+  - name: R6. reason BAD_TIMESTAMP
+    type: org.apache.nifi.processors.attributes.UpdateAttribute
+    properties:
+      quarantine_reason: BAD_TIMESTAMP
+    relationships:
+      success: 14. Stamp reject reason
+  - name: R7. reason DUP_KEY
+    type: org.apache.nifi.processors.attributes.UpdateAttribute
+    properties:
+      quarantine_reason: DUP_KEY
+    relationships:
+      success: 14. Stamp reject reason
+  - name: 14. Stamp reject reason
+    type: org.apache.nifi.processors.standard.UpdateRecord
+    properties:
+      record-writer: service:QuarantineWriter
+      /reason: ${quarantine_reason}
+      record-reader: service:InferReader
+      /source_file: '{{ source_file }}'
+      /batch_id: '{{ batch_id }}'
+      /detail: ${validation.details}
+    relationships:
+      success: 15. Load quarantine
+      failure: 17. Park failures in DLQ
+  - name: 15. Load quarantine
+    type: org.apache.nifi.processors.standard.PutDatabaseRecord
+    properties:
+      put-db-record-unmatched-column-behavior: Ignore Unmatched Columns
+      put-db-record-dcbp-service: service:PostgresPool
+      put-db-record-statement-type: INSERT
+      db-type: PostgreSQL
+      put-db-record-table-name: quarantine_records
+      put-db-record-unmatched-field-behavior: Ignore Unmatched Fields
+      put-db-record-record-reader: service:InferReader
+    relationships:
+      failure: 17. Park failures in DLQ
+      retry: (self — retry)
+      success: 16. Record rejects
+    retry:
+      relationships:
+      - failure
+      count: 5
+      backoff: 30 secs
+  dead_letter:
+  - name: 17. Park failures in DLQ
+    type: org.apache.nifi.processors.standard.PutFile
+    properties:
+      Directory: /opt/nifi/data/dlq
+      Conflict Resolution Strategy: replace
+    relationships:
+      success: 18. Record failed job
+  job_ledger:
+  - name: 13. Record job run
+    type: org.apache.nifi.processors.standard.PutSQL
+    properties:
+      putsql-sql-statement: INSERT INTO job_runs (batch_id, source_file, started_at, finished_at, duration_ms,
+        orders_loaded, status) VALUES ('{{ batch_id }}', '{{ source_file }}', to_timestamp(${ingest_start}/1000.0),
+        now(), ${now():toNumber():minus(${ingest_start})}, {{ record_count }}, 'LOADED') ON CONFLICT (batch_id)
+        DO UPDATE SET finished_at = now(), started_at = EXCLUDED.started_at, duration_ms = EXCLUDED.duration_ms,
+        orders_loaded = EXCLUDED.orders_loaded, status = CASE WHEN job_runs.status = 'FAILED' THEN 'FAILED'               ELSE
+        'LOADED' END
+      JDBC Connection Pool: service:PostgresPool
+    relationships:
+      failure: 17. Park failures in DLQ
+      retry: (self — retry)
+    retry:
+      relationships:
+      - failure
+      count: 5
+      backoff: 30 secs
+  - name: 16. Record rejects
+    type: org.apache.nifi.processors.standard.PutSQL
+    properties:
+      putsql-sql-statement: INSERT INTO job_runs (batch_id, source_file, finished_at, records_invalid,
+        status) VALUES ('{{ batch_id }}', '{{ source_file }}', now(), {{ record_count }}, 'LOADED') ON
+        CONFLICT (batch_id) DO UPDATE SET records_invalid = job_runs.records_invalid + EXCLUDED.records_invalid
+      JDBC Connection Pool: service:PostgresPool
+    relationships:
+      retry: (self — retry)
+      failure: 17. Park failures in DLQ
+    retry:
+      relationships:
+      - failure
+      count: 5
+      backoff: 30 secs
+  - name: 18. Record failed job
+    type: org.apache.nifi.processors.standard.PutSQL
+    properties:
+      putsql-sql-statement: 'INSERT INTO job_runs (batch_id, source_file, finished_at, status, error_text)
+        VALUES (''${batch_id:isEmpty():ifElse(${filename:substringBeforeLast(''.'')},{{ batch_id }})}'',
+        ''{{ source_file }}'', now(), ''FAILED'', ''routed to DLQ: ${validation.details:isEmpty():ifElse(''reader
+        or load failure'',${validation.details})}'') ON CONFLICT (batch_id) DO UPDATE SET status = ''FAILED'',
+        finished_at = now(), error_text = EXCLUDED.error_text'
+      JDBC Connection Pool: service:PostgresPool
+    relationships:
+      retry: (self — retry)
+      failure: 17. Park failures in DLQ
+  - name: 19. Record loaded lines
+    type: org.apache.nifi.processors.standard.PutSQL
+    properties:
+      putsql-sql-statement: INSERT INTO job_runs (batch_id, source_file, finished_at, records_valid, status)
+        VALUES ('{{ batch_id }}', '{{ source_file }}', now(), {{ record_count }}, 'LOADED') ON CONFLICT
+        (batch_id) DO UPDATE SET records_valid = EXCLUDED.records_valid
+      JDBC Connection Pool: service:PostgresPool
+    relationships:
+      failure: 17. Park failures in DLQ
+      retry: (self — retry)
+    retry:
+      relationships:
+      - failure
+      count: 5
+      backoff: 30 secs
+unmapped:
+  funnels:
+  - id: FUNNEL1
+    role: merges the two alert relationships before the alerts load
+  - id: FUNNEL2
+    role: merges every `failure` relationship into the dead-letter path
+  - id: FUNNEL3
+    role: merges the eight labelled reject paths before quarantine
+  concepts:
+  - canvas positions (position, bends, labelIndex, zIndex)
+  - bundle coordinates (group/artifact/version per component)
+  - record reader/writer wiring — an engine-level concern, not pipeline logic
+  - backpressure thresholds and FlowFile expiry
+  - scheduling strategy and penalty/yield durations
+external_rejects:
+  READER_FAILURE:
+    realized_by: generator/gen/monitor.py
+    how: sweeps data/dlq/ and inserts a quarantine row per unreadable file

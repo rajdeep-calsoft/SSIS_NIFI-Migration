@@ -1,0 +1,54 @@
+# A standalone NiFi + Postgres, owned by THIS repo.
+#
+# Earlier, `verify-import` / `deploy` / `verify-behavior` reused whatever NiFi
+# and Postgres NIFI-FLOW's own stack happened to have running -- convenient
+# while both projects were being built side by side, but it meant demoing
+# SSIS2NIFI meant first going into a different folder and starting a six
+# -container stack that has nothing to do with this tool. This file removes
+# that dependency: `make up` here is the whole prerequisite.
+#
+# Only two services, because that is all this tool touches -- no Grafana, no
+# generator, no monitor; those belong to NIFI-FLOW's demo, not this one's.
+# Different container names and host ports than NIFI-FLOW's stack (8081 /
+# 5435, not 8080 / 5433) so the two can never collide if both happen to be up
+# at once, even though this tool no longer needs that to be true.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: ssis2nifi-warehouse
+    environment:
+      POSTGRES_USER: etl
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env -- see .env.example}
+      POSTGRES_DB: ssis2nifi
+    ports:
+      - "5435:5432"
+    volumes:
+      - ssis2nifi-pgdata:/var/lib/postgresql/data
+      - ./db/adventureworks_subset.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U etl -d ssis2nifi"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  nifi:
+    image: apache/nifi:1.27.0
+    container_name: ssis2nifi-engine
+    ports:
+      - "8081:8080"
+    environment:
+      NIFI_WEB_HTTP_PORT: "8080"
+      # No login, no certificate, same call NIFI-FLOW makes and for the same
+      # reason -- this is a local demo instance, not production. See its
+      # CLAUDE.md section 1 for why that cannot ship as-is.
+    volumes:
+      - ./data/landing:/opt/nifi/data/ssis2nifi/landing
+      - ./data/rejects:/opt/nifi/data/rejects
+      - ./drivers:/opt/nifi/drivers
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  ssis2nifi-pgdata:

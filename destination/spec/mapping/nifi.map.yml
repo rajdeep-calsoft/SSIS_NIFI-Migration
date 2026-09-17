@@ -1,0 +1,166 @@
+# NiFi → canonical mapping
+#
+# engines/nifi.yml is derived mechanically from flow.json. pipeline.yml is NOT:
+# knowing that "5. Enrich category / check SKU" *means* the canonical stage
+# `enrich_product`, whose miss is rejected as UNKNOWN_SKU, is a human judgement.
+# That judgement is written down once, here, and the extractor reads it.
+#
+# Every processor in flow.json must appear in exactly one stage below, or in
+# `unmapped`. extract_nifi.py fails loudly otherwise, so adding a processor to
+# the canvas cannot silently escape the spec.
+
+version: 1
+
+# Ordered. `type` and the failure contract are the neutral vocabulary; the
+# extractor fills in the concrete detail (SQL, keys, schema names) from flow.json.
+stages:
+
+  - id: ingest
+    type: source
+    describe: pick up a batch file and stamp it with a batch id
+    processors:
+      - 1. List landing files
+      - 2. Fetch file
+      - 3. Stamp batch id
+
+  - id: guard_empty
+    type: filter
+    describe: reject zero-byte files before they reach the parser
+    # dead-lettered as a whole file; the DLQ sweeper later records it as
+    # READER_FAILURE, so there is no separate EMPTY_FILE reject reason
+    on_fail: { action: dead_letter, becomes: READER_FAILURE }
+    processors:
+      - "3b. Guard: empty file"
+
+  - id: require_fields
+    type: filter
+    describe: every critical field must be present and non-empty
+    # Split out in front of `validate` on purpose. The SSIS engine separates a
+    # field that is ABSENT (NULL_CRITICAL) from one that is present but
+    # UNREADABLE (PARSE_ERROR); ValidateRecord alone reports both identically,
+    # so the null case is taken out first and what remains can only be a parse
+    # failure. An empty string counts as absent, as it does there.
+    on_fail: { action: reject, reason: NULL_CRITICAL }
+    processors:
+      - "3c. Required fields"
+
+  - id: validate
+    type: validate
+    describe: a present field must parse as its declared type
+    on_fail: { action: reject, reason: PARSE_ERROR }
+    processors:
+      - 4. Validate against schema
+
+  - id: enrich_product
+    type: lookup
+    describe: attach product category, and prove the sku exists
+    on_fail: { action: reject, reason: UNKNOWN_SKU }
+    processors:
+      - 5. Enrich category / check SKU
+
+  - id: enrich_customer
+    type: lookup
+    describe: attach country and segment, and prove the customer exists
+    on_fail: { action: reject, reason: UNKNOWN_CUSTOMER }
+    processors:
+      - 6. Enrich country / check customer
+
+  - id: business_rules
+    type: filter
+    describe: quantity, price, currency and order date must be sane
+    # three separate rules, three separate reject reasons -- the SSIS side
+    # reports at this granularity, and one shared BAD_VALUES bucket could not
+    # be compared against it
+    # Listed in the order the rules fire. That order is part of the contract:
+    # a record breaking two rules is reported under the FIRST one, so a
+    # different order is a different answer.
+    on_fail:
+      - { rule: amounts,   action: reject, reason: RANGE_VIOLATION }
+      - { rule: timestamp, action: reject, reason: BAD_TIMESTAMP }
+      - { rule: currency,  action: reject, reason: BAD_CURRENCY }
+    processors:
+      - 7. Business rules
+
+  - id: dedupe
+    type: filter
+    describe: the business key (order_id, line_no) must not already have been seen
+    on_fail: { action: reject, reason: DUP_KEY }
+    processors:
+      # two halves of one rule: 8b catches a key repeated INSIDE a file, 8c
+      # catches one already loaded by an EARLIER file. The SSIS engine's rule
+      # 14 covers both, so both belong to this stage.
+      - "8b. Dedupe on (order_id, line_no)"
+      - "8c. Check replay (order_id, line_no)"
+
+  - id: aggregate_orders
+    type: aggregate
+    describe: fold order lines into one order row, and evaluate the alert rules
+    processors:
+      - 8. Aggregate orders + alert rules
+
+  - id: project_items
+    type: project
+    describe: select the line-item columns for the items table
+    processors:
+      - 9. Project line items
+
+  - id: load
+    type: load
+    describe: write orders, line items and alerts to the warehouse
+    processors:
+      - 10. Load orders
+      - 11. Load order items
+      - 12. Load alerts
+
+  - id: quarantine
+    type: reject_sink
+    describe: label why a record was rejected and store it with its payload intact
+    processors:
+      - R1. reason NULL_CRITICAL
+      - R1b. reason PARSE_ERROR
+      - R2. reason UNKNOWN_SKU
+      - R3. reason UNKNOWN_CUSTOMER
+      - R4. reason RANGE_VIOLATION
+      - R5. reason BAD_CURRENCY
+      - R6. reason BAD_TIMESTAMP
+      - R7. reason DUP_KEY
+      - 14. Stamp reject reason
+      - 15. Load quarantine
+
+  - id: dead_letter
+    type: dead_letter
+    describe: park whole files that could not be read at all
+    processors:
+      - 17. Park failures in DLQ
+
+  - id: job_ledger
+    type: observability
+    describe: one job_runs row per input file, written by four processors
+    processors:
+      - 13. Record job run
+      - 16. Record rejects
+      - 18. Record failed job
+      - 19. Record loaded lines
+
+# NiFi concepts with no neutral equivalent. Named so the loss is explicit
+# rather than silent.
+unmapped:
+  funnels:
+    - id: FUNNEL1
+      role: merges the two alert relationships before the alerts load
+    - id: FUNNEL2
+      role: merges every `failure` relationship into the dead-letter path
+    - id: FUNNEL3
+      role: merges the eight labelled reject paths before quarantine
+  concepts:
+    - canvas positions (position, bends, labelIndex, zIndex)
+    - bundle coordinates (group/artifact/version per component)
+    - record reader/writer wiring — an engine-level concern, not pipeline logic
+    - backpressure thresholds and FlowFile expiry
+    - scheduling strategy and penalty/yield durations
+
+# Reject reasons the pipeline guarantees but NiFi does not itself produce.
+external_rejects:
+  READER_FAILURE:
+    realized_by: generator/gen/monitor.py
+    how: sweeps data/dlq/ and inserts a quarantine row per unreadable file

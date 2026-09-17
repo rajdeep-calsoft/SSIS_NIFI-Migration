@@ -1,0 +1,22 @@
+{
+  "name": "tier2-mixed",
+  "describe": "1,000 orders at 6% faults + a 40-line replay",
+  "base_ts": 1788264000000,
+  "base_ts_iso": "2026-09-01T12:00:00+00:00",
+  "orders": 1000,
+  "lines": 2016,
+  "faults": {
+    "bad_values": 21,
+    "duplicate_id": 40,
+    "late_timestamp": 13,
+    "missing_field": 17,
+    "unicode_currency": 13,
+    "unknown_customer": 13,
+    "unknown_sku": 11,
+    "wrong_type": 20
+  },
+  "catalogue": {
+    "products": 18,
+    "customers": 60
+  }
+}

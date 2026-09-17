@@ -1,0 +1,134 @@
+# Microsoft.Lookup -> LookupRecord + DatabaseRecordLookupService
+#
+# The closest thing to a field-for-field translation in the whole catalogue,
+# which is why it is the worked example in DIAGRAM.md picture 3.
+#
+# Property keys copied from "5. Enrich category / check SKU" in
+# ~/Desktop/NIFI-FLOW/nifi/flow/ecommerce_etl.flow.json.
+
+component_class: Microsoft.Lookup
+also: ["{671046B0-AA63-4C9F-90E4-C06E0B710CE3}"]
+rule_id: lookup/v1
+support: full
+
+requires:
+  - connections.OleDbConnection
+  - derived.reference_table
+  - derived.join_column
+
+services:
+  # One pool per binding, not per component: the intern key is the binding, so
+  # three lookups against the same database share one connection pool.
+  - key: "dbcp:{{ binding_id }}"
+    kind: DBCPConnectionPool
+    name: "{{ binding_id }}Pool"
+    properties:
+      Database Connection URL: "{{ binding.url }}"
+      Database Driver Class Name: "{{ binding.driver_class }}"
+      database-driver-locations: "{{ binding.driver_path }}"
+      Database User: "{{ binding.user }}"
+      Password: "@secret:{{ binding.password_ref }}"
+
+  # Two alternative "lookup" entries, mutually exclusive by `when` (same
+  # pattern as microsoft.flatfilesource.yml's reader alternation). Restricting
+  # `dbrecord-lookup-value-columns` (confirmed against a live NiFi 1.27.0
+  # DatabaseRecordLookupService's own descriptor) to exactly what
+  # CopyFromReferenceColumn asked for matters because the recipe's
+  # `result-record-path: "/"` below merges the WHOLE reference row at the
+  # record's root -- unrestricted, a reference table column that happens to
+  # share a name with an input field (e.g. both an order line and its
+  # product row have unit_price) gets silently overwritten before anything
+  # downstream (a validation rule, say) ever sees the original. Found by
+  # feeding a generated flow a batch with a deliberately-corrupted
+  # unit_price: it vanished before Business Rules ever ran, because Lookup
+  # Product's catalogue price replaced it. A lookup with nothing to copy
+  # (no CopyFromReferenceColumn at all) leaves the property unset, its
+  # original, unrestricted behaviour.
+  - key: "lookup:{{ node.id }}"
+    kind: DatabaseRecordLookupService
+    name: "{{ node.name }} lookup"
+    when: "derived.returns_csv"
+    properties:
+      dbrecord-lookup-dbcp-service: "@service:dbcp:{{ binding_id }}"
+      dbrecord-lookup-table-name: "{{ derived.reference_table }}"
+      # `dbrecord-lookup-key-column`, NOT `dbrecord-lookup-lookup-key-column`.
+      # Both exist on the service; only this one is required, and the other is
+      # rejected as "not a supported property". This is the name NIFI-FLOW's
+      # working flow uses -- changing it was a guess, and it cost a deploy.
+      dbrecord-lookup-key-column: "{{ derived.join_column }}"
+      dbrecord-lookup-cache-size: "{{ derived.cache_size }}"
+      dbrecord-lookup-value-columns: "{{ derived.returns_csv }}"
+  - key: "lookup:{{ node.id }}"
+    kind: DatabaseRecordLookupService
+    name: "{{ node.name }} lookup"
+    when: "derived.returns_csv == ''"
+    properties:
+      dbrecord-lookup-dbcp-service: "@service:dbcp:{{ binding_id }}"
+      dbrecord-lookup-table-name: "{{ derived.reference_table }}"
+      dbrecord-lookup-key-column: "{{ derived.join_column }}"
+      dbrecord-lookup-cache-size: "{{ derived.cache_size }}"
+
+processors:
+  - id: main
+    kind: LookupRecord
+    name: "{{ node.name }}"
+    properties:
+      record-reader: "@service:reader"
+      record-writer: "@service:writer"
+      lookup-service: "@service:lookup:{{ node.id }}"
+      routing-strategy: route-to-matched-unmatched
+      result-contents: record-fields
+      # Safe to merge at the record root because the lookup service above
+      # (see the two "lookup:{{ node.id }}" entries) is restricted to
+      # returning only the columns CopyFromReferenceColumn actually asked
+      # for, when there are any.
+      result-record-path: "/"
+      record-update-strategy: use-property
+      key: "/{{ derived.input_column }}"
+    retry_relationships: [failure]
+
+inputs:
+  "Lookup Input": main
+
+outputs:
+  "Lookup Match Output": {processor: main, relationship: matched}
+  "Lookup No Match Output": {processor: main, relationship: unmatched}
+  "Lookup Error Output": {processor: main, relationship: failure}
+
+# What to do with an output that has no <path> in the source package.
+# Getting this wrong loses rows silently -- see DIAGRAM.md picture 5.
+dangling_output_policy:
+  "Lookup No Match Output":
+    - when: "properties.NoMatchBehavior == '0'"
+      action: route_to_reject
+      note: "SSIS fails the data flow on a miss; auto-terminating would silently drop rows"
+    - else: auto_terminate
+  "Lookup Error Output":
+    - action: route_to_reject
+  "Lookup Match Output":
+    - action: auto_terminate
+
+diagnostics:
+  - when: "properties.CacheType == '1'"
+    severity: warn
+    code: LOOKUP_PARTIAL_CACHE
+    message: "SSIS partial-cache mode has no NiFi equivalent; emitted as a bounded cache."
+  - when: "derived.reference_filtered"
+    severity: warn
+    code: LOOKUP_FILTERED_REFERENCE
+    message: >-
+      The reference set is restricted by SqlCommand, but DatabaseRecordLookupService
+      reads the whole table. Verify this cannot produce extra matches.
+  - when: "derived.date_key"
+    severity: warn
+    code: LOOKUP_DATE_KEY_CAST
+    message: >-
+      The lookup key is a date/time column. SQL Server implicitly casts a string
+      to date in a WHERE clause; Postgres and most other engines do not, so a
+      retargeted deployment fails with "operator does not exist: date = character
+      varying". Either type the key column as text in the target, or cast in the
+      reference query.
+  - when: "derived.composite_key"
+    severity: error
+    code: LOOKUP_COMPOSITE_KEY
+    message: "Composite lookup key; DatabaseRecordLookupService takes one key column."

@@ -1,0 +1,102 @@
+[
+  {
+    "code": -939524094,
+    "name": "DTSBC_E_INCORRECTEXACTNUMBEROFTOTALOUTPUTS",
+    "description": "The total number of outputs and error outputs, , is incorrect. There must be exactly ."
+  },
+  {
+    "code": -939524093,
+    "name": "DTSBC_E_FAILEDTOGETOUTPUTBYINDEX",
+    "description": "Cannot retrieve output with index ."
+  },
+  {
+    "code": -939524091,
+    "name": "DTSBC_E_INCORRECTEXACTNUMBEROFERROROUTPUTS",
+    "description": "The number of error outputs, ,  is incorrect. There must be exactly ."
+  },
+  {
+    "code": -939524090,
+    "name": "DTSBC_E_INVALIDVALIDATIONSTATUSVALUE",
+    "description": "Incorrect validation status value, \" \".  It must be one of the values found in the DTSValidationStatus enumeration."
+  },
+  {
+    "code": -939524089,
+    "name": "DTSBC_E_INPUTHASNOOUTPUT",
+    "description": "The input \"\" has no synchronous output."
+  },
+  {
+    "code": -939524088,
+    "name": "DTSBC_E_INPUTHASNOERROROUTPUT",
+    "description": "The input \"\" has no synchronous error output."
+  },
+  {
+    "code": -939524087,
+    "name": "DTSBC_E_INVALIDHTPIVALUE",
+    "description": "The HowToProcessInput value, , is not valid. It must be one of the values from the HowToProcessInput enumeration."
+  },
+  {
+    "code": -939524086,
+    "name": "DTSBC_E_FAILEDTOGETCOLINFO",
+    "description": "Failed to get information for row \"\", column \"\" from the buffer.  The error code returned was 0x!8.8X!."
+  },
+  {
+    "code": -939524085,
+    "name": "DTSBC_E_FAILEDTOSETCOLINFO",
+    "description": "Failed to set information for row \"\", column \"\" into the buffer.  The error code returned was 0x!8.8X!."
+  },
+  {
+    "code": -939524084,
+    "name": "DTSBC_E_INVALIDPROPERTY",
+    "description": "The property \"\" is not valid."
+  },
+  {
+    "code": -939524083,
+    "name": "DTSBC_E_PROPERTYNOTFOUND",
+    "description": "The property \"\" was not found."
+  },
+  {
+    "code": -939524080,
+    "name": "DTSBC_E_READONLYPROPERTY",
+    "description": "Error assigning a value to the read-only property \"\"."
+  },
+  {
+    "code": -939524079,
+    "name": "DTSBC_E_CANTINSERTOUTPUTCOLUMN",
+    "description": "The  does not allow the insertion of output columns."
+  },
+  {
+    "code": -939524078,
+    "name": "DTSBC_E_OUTPUTCOLUMNSMETADATAMISMATCH",
+    "description": "The output columns' metadata does not match the associated input columns' metadata.  The output columns' metadata will be updated."
+  },
+  {
+    "code": -939524077,
+    "name": "DTSBC_E_OUTPUTCOLUMNSMISSING",
+    "description": "There are input columns that do not have associated output columns. The output columns will be added."
+  },
+  {
+    "code": -939524076,
+    "name": "DTSBC_E_TOOMANYOUTPUTCOLUMNS",
+    "description": "There are output columns that do not have associated input columns. The output columns will be removed."
+  },
+  {
+    "code": -939524075,
+    "name": "DTSBC_E_OUTPUTCOLUMNSMETADATAMISMATCHUNMAP",
+    "description": "The output columns' metadata does not match the associated input columns' metadata.  The input columns will be unmapped."
+  },
+  {
+    "code": -939524074,
+    "name": "DTSBC_E_UNMAPINPUTCOLUMNS",
+    "description": "There are input columns that do not have associated output columns. The input columns will be unmapped."
+  },
+  {
+    "code": -939524073,
+    "name": "DTSBC_E_MULTIPLEINCOLSTOOUTCOL",
+    "description": "There is an input column associated with an output column, and that output column is already associated with another input column on the same input."
+  },
+  {
+    "code": -939524072,
+    "name": "DTSBC_E_CANTINSERTEXTERNALMETADATACOLUMN",
+    "description": "The  does not allow the insertion of external metadata columns."
+  }
+]

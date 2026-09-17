@@ -1,0 +1,301 @@
+apiVersion: pipeline-spec/v1
+name: ecommerce_etl
+description: 'Order-line ingestion: validate, enrich, apply rules, load, and account for everything rejected
+  on the way.'
+generated_by: spec/extract_nifi.py — do not hand-edit
+records:
+  order_line:
+  - name: order_id
+    type: string
+    required: true
+  - name: line_no
+    type: int
+    required: true
+  - name: customer_id
+    type: string
+    required: true
+  - name: order_ts
+    type: long
+    required: true
+  - name: order_ts_iso
+    type: string
+    required: false
+  - name: status
+    type: string
+    required: true
+  - name: channel
+    type: string
+    required: true
+  - name: payment_type
+    type: string
+    required: false
+  - name: currency
+    type: string
+    required: true
+  - name: sku
+    type: string
+    required: true
+  - name: qty
+    type: int
+    required: true
+  - name: unit_price
+    type: double
+    required: true
+  - name: line_total
+    type: double
+    required: true
+  quarantine_record:
+  - name: reason
+    type: string
+    required: false
+  - name: detail
+    type: string
+    required: false
+  - name: batch_id
+    type: string
+    required: false
+  - name: source_file
+    type: string
+    required: false
+  - name: order_id
+    type: string
+    required: false
+  - name: line_no
+    type: string
+    required: false
+  - name: customer_id
+    type: string
+    required: false
+  - name: order_ts
+    type: string
+    required: false
+  - name: sku
+    type: string
+    required: false
+  - name: qty
+    type: string
+    required: false
+  - name: unit_price
+    type: string
+    required: false
+  - name: line_total
+    type: string
+    required: false
+  - name: currency
+    type: string
+    required: false
+  - name: status
+    type: string
+    required: false
+  - name: channel
+    type: string
+    required: false
+lookups:
+  customers:
+    key: customer_id
+    key_column: customer_id
+    returns:
+    - country
+    - segment
+  products:
+    key: sku
+    key_column: sku
+    returns:
+    - category
+  v_loaded_line_keys:
+    key: order_line_id
+    key_column: order_line_id
+    returns:
+    - already_loaded
+stages:
+- id: ingest
+  type: source
+  describe: pick up a batch file and stamp it with a batch id
+  paths:
+    watch: /opt/nifi/data/landing
+    archive: /opt/nifi/data/archive
+- id: guard_empty
+  type: filter
+  describe: reject zero-byte files before they reach the parser
+  condition: file_size > 0
+  on_fail:
+    action: dead_letter
+    becomes: READER_FAILURE
+- id: require_fields
+  type: filter
+  describe: every critical field must be present and non-empty
+  sql:
+    null_critical: SELECT * FROM FLOWFILE WHERE order_id IS NULL OR CAST(order_id AS VARCHAR) = '' OR
+      sku IS NULL OR CAST(sku AS VARCHAR) = '' OR customer_id IS NULL OR CAST(customer_id AS VARCHAR)
+      = '' OR qty IS NULL OR CAST(qty AS VARCHAR) = '' OR unit_price IS NULL OR CAST(unit_price AS VARCHAR)
+      = '' OR order_ts IS NULL OR CAST(order_ts AS VARCHAR) = ''
+    present: SELECT * FROM FLOWFILE WHERE NOT (order_id IS NULL OR CAST(order_id AS VARCHAR) = '' OR sku
+      IS NULL OR CAST(sku AS VARCHAR) = '' OR customer_id IS NULL OR CAST(customer_id AS VARCHAR) = ''
+      OR qty IS NULL OR CAST(qty AS VARCHAR) = '' OR unit_price IS NULL OR CAST(unit_price AS VARCHAR)
+      = '' OR order_ts IS NULL OR CAST(order_ts AS VARCHAR) = '')
+  on_fail:
+    action: reject
+    reason: NULL_CRITICAL
+- id: validate
+  type: validate
+  describe: a present field must parse as its declared type
+  record: order_line
+  strict_types: true
+  on_fail:
+    action: reject
+    reason: PARSE_ERROR
+- id: enrich_product
+  type: lookup
+  describe: attach product category, and prove the sku exists
+  lookup: products
+  on_key: sku
+  adds:
+  - category
+  on_fail:
+    action: reject
+    reason: UNKNOWN_SKU
+- id: enrich_customer
+  type: lookup
+  describe: attach country and segment, and prove the customer exists
+  lookup: customers
+  on_key: customer_id
+  adds:
+  - country
+  - segment
+  on_fail:
+    action: reject
+    reason: UNKNOWN_CUSTOMER
+- id: business_rules
+  type: filter
+  describe: quantity, price, currency and order date must be sane
+  sql:
+    range_violation: SELECT * FROM FLOWFILE WHERE NOT (qty >= 1 AND qty <= 999 AND unit_price >= 0.01
+      AND unit_price <= 9999.99)
+    bad_currency: SELECT * FROM FLOWFILE WHERE qty >= 1 AND qty <= 999 AND unit_price >= 0.01 AND unit_price
+      <= 9999.99 AND order_ts BETWEEN {{ now_minus_days(365) }} AND {{ now_plus_days(365) }} AND NOT (UPPER(currency)
+      IN ('INR','USD','EUR','GBP'))
+    bad_timestamp: SELECT * FROM FLOWFILE WHERE qty >= 1 AND qty <= 999 AND unit_price >= 0.01 AND unit_price
+      <= 9999.99 AND NOT (order_ts BETWEEN {{ now_minus_days(365) }} AND {{ now_plus_days(365) }})
+    clean: SELECT * FROM FLOWFILE WHERE qty >= 1 AND qty <= 999 AND unit_price >= 0.01 AND unit_price
+      <= 9999.99 AND order_ts BETWEEN {{ now_minus_days(365) }} AND {{ now_plus_days(365) }} AND UPPER(currency)
+      IN ('INR','USD','EUR','GBP')
+  on_fail:
+  - rule: amounts
+    action: reject
+    reason: RANGE_VIOLATION
+  - rule: timestamp
+    action: reject
+    reason: BAD_TIMESTAMP
+  - rule: currency
+    action: reject
+    reason: BAD_CURRENCY
+- id: dedupe
+  type: filter
+  describe: the business key (order_id, line_no) must not already have been seen
+  sql:
+    dup_key: SELECT * FROM (SELECT FLOWFILE.*, ROW_NUMBER() OVER ( PARTITION BY order_id, line_no ORDER
+      BY order_id) AS dup_rank FROM FLOWFILE) WHERE dup_rank > 1
+    unique: SELECT t.*, t.order_id || '#' || CAST(t.line_no AS VARCHAR) AS order_line_id FROM (SELECT
+      FLOWFILE.*, ROW_NUMBER() OVER ( PARTITION BY order_id, line_no ORDER BY order_id) AS dup_rank FROM
+      FLOWFILE) t WHERE t.dup_rank = 1
+  lookup: v_loaded_line_keys
+  on_key: order_line_id
+  adds:
+  - already_loaded
+  on_fail:
+    action: reject
+    reason: DUP_KEY
+- id: aggregate_orders
+  type: aggregate
+  describe: fold order lines into one order row, and evaluate the alert rules
+  sql:
+    orders: SELECT order_id, MAX(customer_id) AS customer_id, MAX(order_ts) AS order_ts, MAX(status) AS
+      status, MAX(channel) AS channel, MAX(payment_type) AS payment_type, MAX(currency) AS currency, MAX(country)
+      AS country, MAX(segment) AS segment, SUM(line_total) AS order_total, SUM(qty) AS item_count, '{{
+      batch_id }}' AS batch_id, '{{ source_file }}' AS source_file FROM FLOWFILE GROUP BY order_id
+- id: project_items
+  type: project
+  describe: select the line-item columns for the items table
+  sql:
+    items: SELECT order_id, line_no, sku, qty, unit_price, line_total, category, '{{ batch_id }}' AS batch_id
+      FROM FLOWFILE
+- id: load
+  type: load
+  describe: write orders, line items and alerts to the warehouse
+  writes:
+  - orders
+  - order_items
+  - alerts
+- id: quarantine
+  type: reject_sink
+  describe: label why a record was rejected and store it with its payload intact
+  reasons:
+  - NULL_CRITICAL
+  - PARSE_ERROR
+  - UNKNOWN_SKU
+  - UNKNOWN_CUSTOMER
+  - RANGE_VIOLATION
+  - BAD_CURRENCY
+  - BAD_TIMESTAMP
+  - DUP_KEY
+  writes:
+  - quarantine_records
+- id: dead_letter
+  type: dead_letter
+  describe: park whole files that could not be read at all
+  paths:
+    dead_letter: /opt/nifi/data/dlq
+- id: job_ledger
+  type: observability
+  describe: one job_runs row per input file, written by four processors
+alerts:
+- name: HIGH_VALUE
+  severity: WARN
+  scope: line
+  condition: line_total > 500
+- name: SUSPICIOUS_QTY
+  severity: CRITICAL
+  scope: line
+  condition: qty > 50
+targets:
+  alerts:
+    mode: insert
+  order_items:
+    mode: upsert
+    keys:
+    - order_id
+    - line_no
+  orders:
+    mode: upsert
+    keys:
+    - order_id
+  quarantine_records:
+    mode: insert
+rejects:
+  BAD_CURRENCY: currency is not one of INR / USD / EUR / GBP (compared case-insensitively)
+  BAD_TIMESTAMP: order_ts is more than a year old or more than a day ahead
+  DUP_KEY: DUP_KEY
+  NULL_CRITICAL: NULL_CRITICAL
+  PARSE_ERROR: PARSE_ERROR
+  RANGE_VIOLATION: qty or unit_price is not a positive number
+  READER_FAILURE: input could not be parsed at all; whole file dead-lettered
+  UNKNOWN_CUSTOMER: customer_id is not present in the customers table
+  UNKNOWN_SKU: sku is not present in the products table
+observability:
+  job_ledger:
+    table: job_runs
+    granularity: one row per input file
+    fields:
+    - batch_id
+    - source_file
+    - started_at
+    - finished_at
+    - duration_ms
+    - records_valid
+    - records_invalid
+    - orders_loaded
+    - status
+    - error_text
+  dead_letter:
+    path: data/dlq
+    keeps: the original file, unmodified

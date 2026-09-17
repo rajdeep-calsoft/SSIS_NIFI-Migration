@@ -1,0 +1,59 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<ns0:Executable xmlns:ns0="http://www.microsoft.com/SqlServer/Dts" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ns0:Name="pkg_cleanse_validate" ns0:DTSID="{DE8EB5F3-A7BC-4F26-AC55-320A0CCCAB16}" ns0:LocaleID="-1" ns0:CreationDate="2026-01-01T00:00:00" xsi:schemaLocation="http://www.microsoft.com/SqlServer/Dts http://www.microsoft.com/sqlserver/integrationservices/task/tsxml/0.7">
+  <ns0:Executables>
+  <ns0:Executable ns0:Name="Reset DLQ" ns0:DTSID="{1E334B58-59FC-403E-AAC2-7EF3E2F7998F}" ns0:LocaleID="-1" ns0:ExecutableType="Microsoft.ExecuteSQLTask" ns0:ObjectName="Reset DLQ">
+    <ns0:ObjectData>
+      <ns1:ExecuteSQLTask xmlns:ns1="http://www.microsoft.com/SqlServer/Dts/tasks" Connection="PG_OLEDB" SqlStatementSource="DELETE FROM control.dlq_errors WHERE etl_batch_id = @[User::EtlBatchId]"/>
+    </ns0:ObjectData>
+  </ns0:Executable>
+  <ns0:Executable ns0:Name="DFT Cleanse Validate" ns0:DTSID="{826F8EB7-75E2-4E86-B268-6365E3D97280}" ns0:LocaleID="-1" ns0:ExecutableType="SSIS.Pipeline" ns0:ObjectName="DFT Cleanse Validate">
+    <ns0:ObjectData>
+      <ns2:Pipeline xmlns:ns2="http://www.microsoft.com/SqlServer/Dts/tasks" ns0:Name="DFT Cleanse Validate">      <ns2:component ns0:Name="Sales Stage Source" ns0:className="OleDbSource" ns0:description="" ns0:componentClassID="">
+        <ns2:Properties>
+          <ns2:property ns0:Name="sqlCommand">SELECT stage_row_id, order_id, customer_name, customer_email, product_code, quantity, unit_price, discount_pct, order_date, ship_date, notes FROM stage.sales_stage</ns2:property>
+        </ns2:Properties>
+      </ns2:component>
+      <ns2:component ns0:Name="Route: Valid / Cleanable / Reject" ns0:className="ConditionalSplit" ns0:description="" ns0:componentClassID="">
+        <ns2:Properties>
+          <ns2:property ns0:Name="Output0">Valid rows</ns2:property>
+          <ns2:property ns0:Name="Output1">Cleanable rows</ns2:property>
+          <ns2:property ns0:Name="Output2">Reject rows</ns2:property>
+        </ns2:Properties>
+      </ns2:component>
+      <ns2:component ns0:Name="Product Catalog Lookup" ns0:className="Lookup" ns0:description="" ns0:componentClassID="">
+        <ns2:Properties>
+          <ns2:property ns0:Name="sqlCommand">SELECT sku AS product_code, product_name, category, unit_price AS base_price, manufacturer FROM public.products</ns2:property>
+          <ns2:property ns0:Name="errorHandling">RedirectToErrorOutput</ns2:property>
+        </ns2:Properties>
+      </ns2:component>
+      <ns2:component ns0:Name="Clean + Compute Total" ns0:className="DerivedColumn" ns0:description="" ns0:componentClassID="">
+        <ns2:Properties>
+          <ns2:property ns0:Name="Expression">LTRIM(RTRIM(customer_name))|[TRIM] category=[LOWER] total_price=quantity*unit_price*(1-discount_pct)</ns2:property>
+        </ns2:Properties>
+      </ns2:component>
+      <ns2:component ns0:Name="Sort & De-Dupe on order_line" ns0:className="SortRemoveDuplicates" ns0:description="" ns0:componentClassID="">
+        <ns2:Properties>
+          <ns2:property ns0:Name="keys">order_id|line_no</ns2:property>
+        </ns2:Properties>
+      </ns2:component>
+      <ns2:component ns0:Name="DLQ Writer" ns0:className="OleDbDestination" ns0:description="" ns0:componentClassID="">
+        <ns2:Properties>
+          <ns2:property ns0:Name="openRowset">control.dlq_errors</ns2:property>
+          <ns2:property ns0:Name="errorHandling">DeadLetter</ns2:property>
+        </ns2:Properties>
+      </ns2:component>
+      </ns2:Pipeline>
+    </ns0:ObjectData>
+  </ns0:Executable>
+  </ns0:Executables>
+  <ns0:ConnectionManagers>
+    <ns0:ConnectionManager ns0:Name="PG_OLEDB" ns0:DTSID="{894BADCF-4FA4-432F-93DC-65654C1167AD}" ns0:ObjectName="PG_OLEDB">
+      <ns0:ObjectData>
+        <ns1:ConnectionManager xmlns:ns1="http://www.microsoft.com/SqlServer/Dts/tasks" ConnectionString="Driver={PostgreSQL ANSI};Server=postgres;Port=5432;Database=etl_db;UID=REDACTED;PWD=REDACTED;" Provider="OLE DB Provider for PostgreSQL"/>
+      </ns0:ObjectData>
+    </ns0:ConnectionManager>
+  </ns0:ConnectionManagers>
+  <ns0:Variables>
+    <ns0:Variable ns0:Name="EtlBatchId" ns0:Namespace="User">0</ns0:Variable>
+  </ns0:Variables>
+</ns0:Executable>

@@ -1,0 +1,76 @@
+# SSIS data types -> Avro, for the record schemas NiFi readers need.
+#
+# SSIS spells a type three different ways depending on where you read it, and
+# a converter has to handle all three:
+#
+#   dataType="wstr"            on a pipeline output column
+#   DT_WSTR                    inside ReferenceMetadataXml
+#   DataType="130"             on a flat file connection manager column
+#
+# The numeric codes are OLE DB DBTYPE values, which is why they look arbitrary.
+# They are the only form available for a flat file's columns, and a flat file
+# with no header row has no other source of schema at all -- so leaving them
+# unmapped means guessing column names from the first row of data.
+
+# Short form, as it appears on pipeline output columns.
+short:
+  bool:        {avro: boolean,  dt: DT_BOOL}
+  i1:          {avro: int,      dt: DT_I1}
+  i2:          {avro: int,      dt: DT_I2}
+  i4:          {avro: int,      dt: DT_I4}
+  i8:          {avro: long,     dt: DT_I8}
+  ui1:         {avro: int,      dt: DT_UI1}
+  ui2:         {avro: int,      dt: DT_UI2}
+  ui4:         {avro: long,     dt: DT_UI4}
+  ui8:         {avro: long,     dt: DT_UI8}
+  r4:          {avro: float,    dt: DT_R4}
+  r8:          {avro: double,   dt: DT_R8}
+  cy:          {avro: double,   dt: DT_CY}
+  numeric:     {avro: string,   dt: DT_NUMERIC,     note: "string keeps precision; see policy.decimal_as"}
+  decimal:     {avro: string,   dt: DT_DECIMAL,     note: "string keeps precision"}
+  str:         {avro: string,   dt: DT_STR,         note: "code-page sensitive"}
+  wstr:        {avro: string,   dt: DT_WSTR}
+  text:        {avro: string,   dt: DT_TEXT}
+  ntext:       {avro: string,   dt: DT_NTEXT}
+  guid:        {avro: string,   dt: DT_GUID}
+  bytes:       {avro: bytes,    dt: DT_BYTES}
+  image:       {avro: bytes,    dt: DT_IMAGE}
+  dbDate:      {avro: string,   dt: DT_DBDATE,      format: "yyyy-MM-dd"}
+  dbTime:      {avro: string,   dt: DT_DBTIME,      format: "HH:mm:ss"}
+  dbTimeStamp: {avro: string,   dt: DT_DBTIMESTAMP, format: "yyyy-MM-dd HH:mm:ss"}
+  date:        {avro: string,   dt: DT_DATE,        format: "yyyy-MM-dd"}
+
+# OLE DB DBTYPE numeric codes, used by flat file connection managers.
+numeric_codes:
+  "2":   i2
+  "3":   i4
+  "4":   r4
+  "5":   r8
+  "6":   cy
+  "7":   date
+  "11":  bool
+  "16":  i1
+  "17":  ui1
+  "18":  ui2
+  "19":  ui4
+  "20":  i8
+  "21":  ui8
+  "72":  guid
+  "129": str
+  "130": wstr
+  "131": numeric
+  "133": dbDate
+  "134": dbTime
+  "135": dbTimeStamp
+  "145": dbDate
+
+# Dates and decimals are read as strings and converted at the JDBC boundary.
+#
+# This is the same decision NIFI-FLOW documents in build_flow.py ("never set
+# Timestamp Format on the JsonTreeReader"): typing a date early makes the
+# record reader reject rows that the database would have accepted, turning a
+# loading problem into a validation problem. PutDatabaseRecord converts on
+# insert, where a failure is a row-level reject rather than a whole batch.
+policy:
+  dates_as: string
+  decimal_as: string

@@ -1,0 +1,18 @@
+{
+  "name": "tier3-bulk-generated",
+  "describe": "50,000 orders, faults restricted to what a generated flow supports",
+  "base_ts": 1788264000000,
+  "base_ts_iso": "2026-09-01T12:00:00+00:00",
+  "orders": 50000,
+  "lines": 100249,
+  "faults": {
+    "bad_values": 1469,
+    "unicode_currency": 1511,
+    "unknown_customer": 1509,
+    "unknown_sku": 1443
+  },
+  "catalogue": {
+    "products": 18,
+    "customers": 60
+  }
+}

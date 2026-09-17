@@ -1,0 +1,21 @@
+{
+  "name": "tier3-bulk",
+  "describe": "50,000 orders at 6% faults - the throughput run",
+  "base_ts": 1788264000000,
+  "base_ts_iso": "2026-09-01T12:00:00+00:00",
+  "orders": 50000,
+  "lines": 99727,
+  "faults": {
+    "bad_values": 887,
+    "late_timestamp": 845,
+    "missing_field": 880,
+    "unicode_currency": 881,
+    "unknown_customer": 852,
+    "unknown_sku": 873,
+    "wrong_type": 868
+  },
+  "catalogue": {
+    "products": 18,
+    "customers": 60
+  }
+}

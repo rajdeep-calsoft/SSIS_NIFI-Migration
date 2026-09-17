@@ -1,0 +1,403 @@
+apiVersion: engine-binding/v1
+engine: ssis
+engine_version: "SSIS Streaming ETL Demo (Retail) — ssis_sim runtime"
+implements: pipeline-spec/v1
+
+# HAND-WRITTEN, unlike engines/nifi.yml which is generated.
+#
+# Derived from the CODE THAT RUNS, not from his catalogue:
+#   ../source/ssis_sim/stream_runner.py  _validate_stream()
+#
+# That distinction matters. An earlier version of this file was translated
+# from `ssis_metadata/ssis_catalog.yaml`, and the catalogue disagrees with the
+# runtime in five places -- see `catalogue_disagrees_with_code:` at the bottom.
+# The pipeline is graded against what executes.
+#
+# Every rule still carries `their_id`, the rule number in his catalogue, so any
+# claim can be checked both ways. Where his pipeline does something this spec
+# has no vocabulary for, it is recorded under `unmapped:` rather than dropped.
+#
+# This file is the RIGHT-HAND COLUMN of `make rules-diff`. It is what NiFi is
+# being compared against, and — per the migration brief — what NiFi bends to.
+
+source_of_truth: ../source/ssis_sim/stream_runner.py
+cross_check: ../source/ssis_metadata/ssis_catalog.yaml
+translated_on: "2026-09-12"
+
+# The order rules fire in IS part of the contract: a record breaking two rules
+# is reported under the first one reached, so a different order is a different
+# answer. This is the sequence in _validate_stream (stream_runner.py:166-222).
+rule_order:
+  - required_fields      # NULL_CRITICAL   -- an empty string counts as absent
+  - line_no_parses       # PARSE_ERROR     -- added 2026-09-13, see divergences
+  - qty_parses           # PARSE_ERROR
+  - qty_range            # RANGE_VIOLATION
+  - price_parses         # PARSE_ERROR
+  - price_range          # RANGE_VIOLATION
+  - sku_exists           # UNKNOWN_SKU
+  - customer_exists      # UNKNOWN_CUSTOMER
+  - timestamp_parses     # PARSE_ERROR
+  - timestamp_window     # BAD_TIMESTAMP
+  - currency_whitelist   # BAD_CURRENCY
+  - line_total_fix       # (no rejection)
+  - alerts               # HIGH_VALUE, SUSPICIOUS_QTY
+  - dedupe               # DUP_KEY -- after the load staging, not inline
+
+# --------------------------------------------------------------------------
+# The 16 rules, normalized into this spec's shape.
+#
+#   area     — the comparison key. rules_diff.py lines the two engines up on it.
+#   check    — the condition, in plain SQL-ish text
+#   outcome  — reject | fix | alert
+#   reason   — the literal string written to the reject table
+# --------------------------------------------------------------------------
+rules:
+- area: file_readable
+  status: agreed
+  their_id: 2
+  stage: ingest
+  check: file must be readable; a burst file quarantines the whole batch
+  outcome: reject
+  reason: READER_FAILURE
+
+- area: json_parses
+  status: open
+  their_id: 1
+  stage: ingest
+  check: each line must parse as a JSON object
+  outcome: reject
+  reason: PARSE_ERROR
+  note: >-
+    per LINE, not per file. A single bad line is rejected on its own; the rest
+    of the batch carries on. This pipeline has no per-line parse reject — an
+    unparseable line takes the whole file to READER_FAILURE.
+
+- area: required_fields
+  status: agreed
+  their_id: 3
+  stage: cleanse
+  check: order_id, sku, customer_id, qty, unit_price, order_ts all present and non-empty
+  outcome: reject
+  reason: NULL_CRITICAL
+  note: >-
+    ADOPTED 2026-09-12 as stage `require_fields` (processor "3c. Required
+    fields"), placed in front of ValidateRecord. An empty string counts as
+    absent here exactly as it does there, so qty:"" is NULL_CRITICAL on both
+    engines and not PARSE_ERROR.
+  applies_to: [order_id, sku, customer_id, qty, unit_price, order_ts]
+  excludes: >-
+    line_no is deliberately NOT in his required list. Both engines require it
+    to be an INTEGER, not to be present, so an empty line_no is PARSE_ERROR on
+    both sides rather than NULL_CRITICAL on one. See `line_no_parses` below.
+
+- area: line_no_parses
+  status: agreed
+  their_id: null
+  stage: cleanse
+  check: line_no parses as an integer
+  outcome: reject
+  reason: PARSE_ERROR
+  note: >-
+    ADDED TO HIS ENGINE 2026-09-13, on Rajdeep's explicit instruction, and the
+    only rule ever changed in the SSIS ladder. It sits immediately after
+    required_fields and before qty_parses. Until then line_no was validated
+    here and nowhere there, which was the single cause of 100% of the
+    remaining record-level disagreement between the engines -- 249 of 99,727
+    lines on tier3-bulk, 69 records in one live run.
+
+    This side already enforced it: line_no is `{"name": "line_no", "type":
+    "int"}` in ORDER_LINE_SCHEMA and half the order_items PRIMARY KEY, so it
+    is rejected at the schema gate, not by a QueryRecord branch.
+
+    Closing it the other way -- relaxing this engine -- was rejected: it would
+    mean widening order_items.line_no from INTEGER NOT NULL and dropping it
+    from the primary key. It would also leave his own dedupe rule broken,
+    since that keys on (order_id, line_no).
+
+    See spec/SSIS-CHANGES.md item 14 for the diff and its verification.
+  applies_to: [line_no]
+
+- area: types_parse
+  status: agreed
+  their_id: [4, 6, 10]
+  stage: cleanse
+  check: qty parses as integer; unit_price parses as number; order_ts parses as epoch millis
+  outcome: reject
+  reason: PARSE_ERROR
+  note: >-
+    ADOPTED 2026-09-12. This pipeline used to collapse both into
+    SCHEMA_INVALID, which had no counterpart here and could not be compared.
+    SCHEMA_INVALID is now retired: absent fields are caught by `require_fields`
+    as NULL_CRITICAL, and whatever ValidateRecord rejects afterwards can only
+    be present-but-unparseable, so it is stamped PARSE_ERROR.
+
+- area: qty_range
+  status: agreed
+  their_id: 5
+  stage: cleanse
+  check: 1 <= qty <= 999
+  outcome: reject
+  reason: RANGE_VIOLATION
+  note: >-
+    ADOPTED 2026-09-12. This pipeline now applies the same 1..999 bound
+    (build_flow.py `amounts_ok`), where it previously required only qty > 0.
+
+- area: price_range
+  status: agreed
+  their_id: 7
+  stage: cleanse
+  check: 0.01 <= unit_price <= 9999.99
+  outcome: reject
+  reason: RANGE_VIOLATION
+  note: >-
+    SETTLED 2026-09-12. This was contested while the two engines seeded
+    different catalogues -- his prices ran 3.20-249.00, this one's ran to
+    89,999 INR, so his cap rejected 32% of this pipeline's data. Both engines
+    now seed the SAME catalogue (spec/fixtures/dims.py), his, so the cap never
+    fires on either side. Adopted verbatim.
+
+- area: sku_exists
+  status: agreed
+  their_id: 8
+  stage: cleanse
+  check: sku must exist in the product catalogue
+  outcome: reject
+  reason: UNKNOWN_SKU
+
+- area: customer_exists
+  status: agreed
+  their_id: 9
+  stage: cleanse
+  check: customer_id must exist in the customer table
+  outcome: reject
+  reason: UNKNOWN_CUSTOMER
+
+- area: timestamp_window
+  status: agreed
+  their_id: 11
+  stage: cleanse
+  check: abs(now - order_ts) <= 365 days
+  outcome: reject
+  reason: BAD_TIMESTAMP
+  note: >-
+    ADOPTED 2026-09-12. This pipeline allowed 365 days back but only 1 day
+    forward; the window is now symmetric on both engines. His ladder also
+    tests the timestamp BEFORE the currency, and this pipeline's QueryRecord
+    branches were reordered to match.
+
+- area: currency_whitelist
+  status: agreed
+  their_id: 12
+  stage: cleanse
+  check: UPPER(currency) IN ('INR','USD','EUR','GBP')
+  outcome: reject
+  reason: BAD_CURRENCY
+
+- area: line_total_fix
+  status: differs
+  their_id: 13
+  stage: cleanse
+  check: if abs(line_total - round(qty * unit_price, 2)) > 0.02 then correct it
+  outcome: fix
+  marks: quality_status = CLEANED, with the applied fix listed in `defects`
+  note: >-
+    NOT ADOPTED, deliberately: his "fix" does not fix anything. It appends the
+    string "line_total_fixed:<n>" to `defects` and sets quality_status, but the
+    value persisted in `notes` is the ORIGINAL (stream_runner.py:238) and
+    stage.clean_sales has no line_total column at all. Nothing downstream reads
+    a corrected value, so there is no behaviour here to match. This pipeline
+    also loads the line_total that arrived. Listed for him under
+    `catalogue_disagrees_with_code`.
+
+- area: dedupe
+  status: agreed
+  their_id: 14
+  stage: dedup
+  check: business key (order_id, line_no) must not already exist
+  outcome: reject
+  reason: DUP_KEY
+  note: >-
+    ADOPTED 2026-09-12 as stage `dedupe` (processor "8b. Dedupe on (order_id,
+    line_no)"), using a ROW_NUMBER window so the first occurrence wins and
+    later ones are rejected -- his rule exactly. This pipeline previously
+    absorbed a replay silently through its UPSERT key: same end state in the
+    fact tables, but no visible record that a replay happened. The UPSERT is
+    still there as a second line of defence.
+
+- area: alert_high_value
+  status: agreed
+  their_id: 15
+  stage: alert
+  check: line_total > 500
+  outcome: alert
+  reason: HIGH_VALUE
+  scope: line
+  note: >-
+    SETTLED 2026-09-12. Adopted verbatim, per LINE. It looked unusable while
+    the catalogues differed (96% of INR-scale lines exceeded 500); on the
+    shared catalogue it fires on roughly 1% of lines. Matched bug for bug: it
+    tests the line_total that ARRIVED, not qty * unit_price recomputed, so an
+    order with a missing line_total raises no alert on either engine.
+
+- area: alert_suspicious_qty
+  status: agreed
+  their_id: 16
+  stage: alert
+  check: qty > 50
+  outcome: alert
+  reason: SUSPICIOUS_QTY
+  scope: line
+
+# --------------------------------------------------------------------------
+rejects:
+  READER_FAILURE: file could not be read at all
+  PARSE_ERROR: a line, or a field in it, could not be parsed
+  NULL_CRITICAL: a required field was absent or empty
+  RANGE_VIOLATION: qty or unit_price outside its allowed range
+  BAD_TIMESTAMP: order_ts outside a 365-day window either way
+  BAD_CURRENCY: currency not in the whitelist
+  UNKNOWN_SKU: sku absent from the product catalogue
+  UNKNOWN_CUSTOMER: customer_id absent from the customer table
+  DUP_KEY: (order_id, line_no) already present — a replayed line
+
+alerts:
+- name: HIGH_VALUE
+  severity: null          # his catalogue records no severity column
+  scope: line
+  condition: line_total > 500
+- name: SUSPICIOUS_QTY
+  severity: null
+  scope: line
+  condition: qty > 50
+
+# His schema shares no table name with this one. That is expected: the
+# comparison is on outcomes, not on structure.
+targets:
+  dw.fact_sales:
+    mode: insert            # append-only; never truncated in the streaming path
+    keys: [order_line_id]
+    equivalent_here: order_items
+  stage.clean_sales:
+    mode: insert
+    equivalent_here: null   # no equivalent — this pipeline has no clean staging table
+  control.dlq_errors:
+    mode: insert
+    equivalent_here: quarantine_records
+  control.stream_alerts:
+    mode: insert
+    equivalent_here: alerts
+  control.stream_file:
+    mode: insert            # unique on source_file — one row per input file
+    equivalent_here: job_runs
+
+observability:
+  job_ledger:
+    table: control.stream_file
+    granularity: one row per input file
+    fields: [source_file, etl_batch_id, lines_in, lines_clean, lines_rejected,
+             orders_loaded, revenue, status, processed_at]
+  also:
+    control.etl_run_log: per-package run log
+    control.reconcile_results: invariant checks per batch
+    control.data_quality_metrics: metric feed for dashboards
+    control.pipeline_runtime: queue depth and heartbeat
+
+# --------------------------------------------------------------------------
+# Things his pipeline has that this spec has no vocabulary for. Listed, not
+# dropped — a documented gap is something you can plan around.
+# --------------------------------------------------------------------------
+unmapped:
+  concepts:
+  - stage.sales_stage — a raw text archive of every input line, kept for replay.
+    This pipeline archives the whole FILE instead (data/archive/), not per line.
+  - dw.dim_customer as SCD Type 2 (valid_from / valid_to / is_current). This
+    pipeline holds customers as a flat dimension with no history.
+  - dim_date / dim_geography / dim_product star-schema dimensions with surrogate
+    keys resolved at load time.
+  - discount_pct, and total_price = round(qty * price * (1 - discount), 4).
+    This pipeline has no discount concept.
+  - fingerprint = md5(...) per clean row.
+  - pkg_reconcile — invariant checks after load
+    (sales_stage == clean_sales + dlq_errors == lines_in).
+  - control.pipeline_runtime / runtime_history — queue depth and consumer
+    heartbeat as tables. Here that lives in nifi_metrics.
+  packaging:
+  - six .dtsx packages orchestrated by pkg_etl_control
+  - a Python simulator (ssis_sim) executes them; SQL Server itself needs Windows
+
+# --------------------------------------------------------------------------
+# Where his catalogue disagrees with his code.
+#
+# `ssis_catalog.yaml` is the document he publishes; `stream_runner.py` is what
+# executes. They differ in five places, each verified against his own pytest
+# suite. Nothing here was changed on his side -- these are his to decide.
+# --------------------------------------------------------------------------
+catalogue_disagrees_with_code:
+- rule: 2
+  catalogue: an unreadable file quarantines the whole batch as READER_FAILURE
+  code: >-
+    READER_FAILURE is raised only from an OSError opening the file
+    (stream_runner.py:125). It is effectively dead code.
+- rule: 1
+  catalogue: a malformed file is rejected whole
+  code: >-
+    the file is read line by line and each bad line becomes PARSE_ERROR;
+    the rest of the batch loads. His own test asserts it
+    (tests/test_stream.py:137).
+- rule: "70 (fault_catalogue)"
+  catalogue: an empty file quarantines the whole batch as READER_FAILURE
+  code: >-
+    an empty file opens fine, stages 0 lines and writes ZERO dlq rows
+    (tests/test_stream.py:145 asserts lines==0, clean==0, rejected==0).
+- rule: 13
+  catalogue: line_total is auto-corrected when it drifts more than 0.02
+  code: >-
+    nothing is corrected -- the original value is persisted and clean_sales
+    has no line_total column (stream_runner.py:238).
+- rule: 15
+  catalogue: HIGH_VALUE on line_total > 500
+  code: >-
+    true, but it tests the INCOMING line_total, not qty * unit_price. A large
+    order arriving with a missing line_total raises no alert.
+
+# --------------------------------------------------------------------------
+# What the two engines still do differently, measured.
+# --------------------------------------------------------------------------
+divergences:
+- area: line_no_validation
+  severity: closed
+  closed_on: "2026-09-13"
+  nifi: >-
+    line_no is a required int in the order_line schema and half the
+    order_items primary key, so a line arriving with line_no "" / "two" /
+    "N/A" is rejected as PARSE_ERROR. Unchanged.
+  ssis: >-
+    NOW MATCHES. His ladder parses line_no as an integer immediately after
+    required_fields and rejects a bad one as PARSE_ERROR. Before this change
+    the row loaded, carrying the unusable value in stage.clean_sales.notes.
+  measured_on: tier3-bulk, 99,727 lines, 2026-09-12
+  impact: >-
+    Was 249 lines (0.25%) on tier3-bulk and 69 records in one live run --
+    100% of the remaining difference at every tier, with every other reject
+    reason already matching to the exact record. Now zero.
+  how_closed: >-
+    On his side, on Rajdeep's explicit instruction: the one rule ever added to
+    the SSIS ladder. Closing it the other way would have meant widening
+    order_items.line_no from INTEGER NOT NULL and dropping it from the primary
+    key, storing order lines with no valid position in their order -- and
+    would have left his own rule 14 broken, since that keys dedupe on
+    (order_id, line_no) and a blank line_no collapsed distinct lines of one
+    order onto a single key. See spec/SSIS-CHANGES.md item 14.
+  verified_by: >-
+    make feed, one 7-record file: 3 valid line_no loaded on both engines,
+    4 broken ones (two / N/A / "" / twelve-hundred) rejected on both as
+    PARSE_ERROR, verdict "agree".
+- area: empty_file
+  severity: accepted
+  nifi: >-
+    a zero-byte file is dead-lettered and leaves a FAILED job_runs row. A file
+    that arrives and produces nothing must still be accounted for.
+  ssis: stages 0 lines, writes no dlq row, records nothing.
+  impact: >-
+    none on record-level comparison; it changes the file ledger only. Kept
+    deliberately -- this is observability the SSIS side lacks.

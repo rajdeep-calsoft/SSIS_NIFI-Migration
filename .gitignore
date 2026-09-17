@@ -1,0 +1,18 @@
+# Root-level scratch. Each sub-project (converter/, destination/, source/)
+# keeps its own .gitignore for its own runtime data -- this file only covers
+# things that live at the Final/ root itself.
+
+.env
+*.log
+api/__pycache__/
+api/*.pyc
+api/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Anything a demo run drops at the root by mistake
+/out/
+
+# Claude Code harness state (this session's scheduling lock, etc.)
+/.claude/

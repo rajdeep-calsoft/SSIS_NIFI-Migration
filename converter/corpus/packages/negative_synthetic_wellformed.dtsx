@@ -1,0 +1,51 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<ns0:Executable xmlns:ns0="http://www.microsoft.com/SqlServer/Dts" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ns0:Name="pkg_ingest_stage" ns0:DTSID="{6713D098-1D9C-44CF-B7BF-D0E10E6E6836}" ns0:LocaleID="-1" ns0:CreationDate="2026-01-01T00:00:00" xsi:schemaLocation="http://www.microsoft.com/SqlServer/Dts http://www.microsoft.com/sqlserver/integrationservices/task/tsxml/0.7">
+  <ns0:Executables>
+  <ns0:Executable ns0:Name="ForEach Pending NDJSON Batch" ns0:DTSID="{0983ED68-19DC-4C1E-BD8D-9BD215A34C6B}" ns0:LocaleID="-1" ns0:ExecutableType="ForeachLoop" ns0:ObjectName="ForEach Pending NDJSON Batch">
+  </ns0:Executable>
+  <ns0:Executable ns0:Name="DFT Ingest Streaming Batch" ns0:DTSID="{746877C6-084D-4106-9B3E-2D3049091F3E}" ns0:LocaleID="-1" ns0:ExecutableType="SSIS.Pipeline" ns0:ObjectName="DFT Ingest Streaming Batch">
+    <ns0:ObjectData>
+      <ns2:Pipeline xmlns:ns2="http://www.microsoft.com/SqlServer/Dts/tasks" ns0:Name="DFT Ingest Streaming Batch">      <ns2:component ns0:Name="Streaming NDJSON Batch Source" ns0:className="JsonSource" ns0:description="" ns0:componentClassID="">
+        <ns2:Properties>
+          <ns2:property ns0:Name="fileName">@[User::SourceFilePath]</ns2:property>
+          <ns2:property ns0:Name="recordType">order_line</ns2:property>
+          <ns2:property ns0:Name="columns">order_id|line_no|customer_id|order_ts|order_ts_iso|status|channel|payment_type|currency|sku|qty|unit_price|line_total</ns2:property>
+        </ns2:Properties>
+      </ns2:component>
+      <ns2:component ns0:Name="Add Source Audit" ns0:className="DerivedColumn" ns0:description="" ns0:componentClassID="">
+        <ns2:Properties>
+          <ns2:property ns0:Name="Expression">@[User::SourceFilePath]</ns2:property>
+          <ns2:property ns0:Name="NewName">source_file</ns2:property>
+        </ns2:Properties>
+      </ns2:component>
+      <ns2:component ns0:Name="Route: Valid JSON / Reader Failure" ns0:className="ConditionalSplit" ns0:description="" ns0:componentClassID="">
+        <ns2:Properties>
+          <ns2:property ns0:Name="Output0">Valid NDJSON line</ns2:property>
+          <ns2:property ns0:Name="Output1">Quarantine whole batch (READER_FAILURE)</ns2:property>
+        </ns2:Properties>
+      </ns2:component>
+      <ns2:component ns0:Name="Stage Load (append)" ns0:className="OleDbDestination" ns0:description="" ns0:componentClassID="">
+        <ns2:Properties>
+          <ns2:property ns0:Name="openRowset">stage.sales_stage</ns2:property>
+        </ns2:Properties>
+      </ns2:component>
+      </ns2:Pipeline>
+    </ns0:ObjectData>
+  </ns0:Executable>
+  <ns0:Executable ns0:Name="Count Staged Lines" ns0:DTSID="{8E64C9F3-A19F-447E-A839-B663D51FFFF8}" ns0:LocaleID="-1" ns0:ExecutableType="Microsoft.ExecuteSQLTask" ns0:ObjectName="Count Staged Lines">
+    <ns0:ObjectData>
+      <ns1:ExecuteSQLTask xmlns:ns1="http://www.microsoft.com/SqlServer/Dts/tasks" Connection="PG_OLEDB" SqlStatementSource="SELECT COUNT(*) FROM stage.sales_stage WHERE source_file = @[User::SourceFilePath]"/>
+    </ns0:ObjectData>
+  </ns0:Executable>
+  </ns0:Executables>
+  <ns0:ConnectionManagers>
+    <ns0:ConnectionManager ns0:Name="PG_OLEDB" ns0:DTSID="{CDEDA52B-4520-4E0A-AB0B-BE00398FB4BD}" ns0:ObjectName="PG_OLEDB">
+      <ns0:ObjectData>
+        <ns1:ConnectionManager xmlns:ns1="http://www.microsoft.com/SqlServer/Dts/tasks" ConnectionString="Driver={PostgreSQL ANSI};Server=postgres;Port=5432;Database=etl_db;UID=REDACTED;PWD=REDACTED;" Provider="OLE DB Provider for PostgreSQL"/>
+      </ns0:ObjectData>
+    </ns0:ConnectionManager>
+  </ns0:ConnectionManagers>
+  <ns0:Variables>
+    <ns0:Variable ns0:Name="SourceFilePath" ns0:Namespace="User">/data/landing</ns0:Variable>
+  </ns0:Variables>
+</ns0:Executable>

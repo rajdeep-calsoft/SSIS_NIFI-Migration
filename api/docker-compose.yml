@@ -1,0 +1,49 @@
+# The curl-triggered middle layer. One container.
+#
+# Reaches the destination NiFi through the HOST gateway and its published
+# port (8080), never by joining destination's docker-compose network --
+# same reasoning as destination/db/init/04_ssis_fdw.sql: joining networks
+# risks alias collisions, and this way the api container needs zero
+# knowledge of the destination stack's internals, only its published port.
+
+services:
+  api:
+    build: .
+    container_name: ssis2nifi-api
+    ports:
+      - "8088:8080"
+    environment:
+      NIFI_API: http://destination-nifi:8080
+      SOURCE_PACKAGES: /source-packages
+      CONVERTER_ROOT: /converter
+      OUT_DIR: /out
+      # The password the generated flow's db_main binding needs (see
+      # converter/bindings/orders_etl.bindings.yml's password_ref). Must
+      # match destination/.env's POSTGRES_PASSWORD -- same warehouse.
+      # Reused below for /export/rejects.csv's own read-only connection --
+      # same warehouse, same password, no separate secret to manage.
+      ORDERS_ETL_DB_MAIN_PASSWORD: ${ORDERS_ETL_DB_MAIN_PASSWORD:?set this in api/.env -- see api/.env.example}
+      DEST_PG_HOST: destination-postgres
+      DEST_PG_PORT: "5433"
+      DEST_PG_DB: etldemo
+      DEST_PG_USER: etl
+    extra_hosts:
+      - "destination-nifi:host-gateway"
+      # Same reasoning as destination-nifi above: reach the destination
+      # warehouse through its published host port, never by joining
+      # destination's own docker-compose network.
+      - "destination-postgres:host-gateway"
+    volumes:
+      - ../converter:/converter:ro
+      # More specific mount for just bindings/, writable so the API can
+      # auto-generate a missing package's bindings.yml (see app.py's
+      # _resolve_bindings) -- everything else under /converter stays
+      # read-only.
+      - ../converter/bindings:/converter/bindings:rw
+      - ../source/ssis_packages:/source-packages:ro
+      - ./out:/out
+      # bind-mounted, not just baked into the image, so a tweak to the
+      # control panel (static/index.html) shows up on a page refresh --
+      # no rebuild needed for a beginner poking at the UI.
+      - ./static:/app/static:ro
+    restart: unless-stopped
