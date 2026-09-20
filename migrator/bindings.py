@@ -36,12 +36,21 @@ def _unique_key(ref_id: str, used: set[str]) -> str:
 
 
 def _oledb_binding_block(conn, db: dict) -> dict:
+    # NiFi's DBCP pool runs INSIDE the destination container, so its JDBC
+    # URL must use the address reachable from there (nifi_internal_host/port
+    # -- typically the Postgres service's internal Compose name + container
+    # port), never the host-published host/port report/ and other host-side
+    # tools use -- "localhost" means something different on each side of
+    # that boundary. Falls back to host/port for a job whose NiFi isn't
+    # itself running in Docker.
+    jdbc_host = db.get("nifi_internal_host", db.get("host"))
+    jdbc_port = db.get("nifi_internal_port", db.get("port"))
     return {
         "for": conn.ref_id,
         "db_type": db.get("db_type", "PostgreSQL"),
         "identifier_case": db.get("identifier_case", "lower"),
         "url": db["url"] if "url" in db else
-               f"jdbc:postgresql://{db['host']}:{db['port']}/{db['dbname']}",
+               f"jdbc:postgresql://{jdbc_host}:{jdbc_port}/{db['dbname']}",
         "driver_class": db.get("driver_class", "org.postgresql.Driver"),
         "driver_path": db.get("driver_path", "/opt/nifi/drivers/postgresql.jar"),
         "user": db["user"],

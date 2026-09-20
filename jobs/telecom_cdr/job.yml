@@ -6,6 +6,8 @@ nifi:
 
 destination_db:
   db_type: PostgreSQL
+  # Host-side address (this machine's published port) -- used by report/ and
+  # any other tool running OUTSIDE Docker to reach this Postgres directly.
   host: localhost
   port: 5437
   dbname: telecom
@@ -15,6 +17,14 @@ destination_db:
   driver_path: /opt/nifi/drivers/postgresql.jar
   identifier_case: lower
   landing_dir: /opt/nifi/data/landing
+  # Address NiFi's OWN DBCP connection pool must use, reached from INSIDE
+  # the NiFi container on destination's Docker network -- "localhost" there
+  # means the NiFi container itself, not this host, so this has to be the
+  # Postgres service's internal Compose name + container port, not the
+  # published host/port above. Falls back to host/port if omitted, which is
+  # only correct when NiFi and the target DB are NOT both in Docker.
+  nifi_internal_host: postgres
+  nifi_internal_port: 5432
 
 source_db:
   host: localhost

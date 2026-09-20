@@ -13,8 +13,8 @@ job.yml shape (see jobs/telecom_cdr/job.yml for a worked example):
 
     destination_db:                       # what the migrated flow writes to
       db_type: PostgreSQL
-      host: localhost
-      port: 5437
+      host: localhost                     # HOST-side address (published port) --
+      port: 5437                          # used by report/ and other host tools
       dbname: telecom
       user: telecom_etl
       password_ref: TELECOM_DB_PASSWORD   # env var name; value never stored here
@@ -22,6 +22,14 @@ job.yml shape (see jobs/telecom_cdr/job.yml for a worked example):
       driver_path: /opt/nifi/drivers/postgresql.jar
       identifier_case: lower
       landing_dir: /opt/nifi/data/landing # path inside the NiFi container
+      # Optional: address NiFi's OWN DBCP pool must use, reached from INSIDE
+      # its container -- "localhost" means something different there than on
+      # the host, so when NiFi and this DB are both in Docker, this must be
+      # the DB service's internal Compose name + container port, NOT the
+      # host/port above. Falls back to host/port if omitted (only correct
+      # when NiFi itself isn't in Docker).
+      nifi_internal_host: postgres
+      nifi_internal_port: 5432
 
     source_db:                            # the SSIS-side warehouse, reached
       host: localhost                     # directly over its published port
