@@ -2,7 +2,7 @@ name: telecom-source
 
 services:
   postgres:
-    image: postgres:16
+    image: postgres:15
     container_name: telecom-source-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-telecom}

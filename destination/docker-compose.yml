@@ -2,7 +2,7 @@ name: telecom-nifi-destination
 
 services:
   postgres:
-    image: postgres:16
+    image: postgres:15
     container_name: telecom-dest-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-telecom}
