@@ -5,7 +5,7 @@
 # Two Docker Compose stacks, deliberately non-colliding with the reference
 # repo's own ports:
 #   source       (telecom warehouse + batch generator)   :5436 postgres
-#   destination  (NiFi + telecom warehouse)               :8085 nifi, :5437 postgres
+#   destination  (NiFi + telecom warehouse)               :8085 nifi, :5437 postgres, :3002 grafana
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
@@ -48,7 +48,7 @@ setup: venv  ## first-time only: .env files + the destination NiFi's Postgres JD
 up: setup  ## start both stacks
 	$(MAKE) up-source
 	$(MAKE) up-destination
-	@echo "up: source postgres :5436   destination nifi :8085 / postgres :5437"
+	@echo "up: source postgres :5436   destination nifi :8085 / postgres :5437 / grafana :3002"
 
 down:  ## stop both stacks, keep all data
 	-$(MAKE) down-destination

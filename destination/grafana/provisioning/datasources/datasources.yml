@@ -1,0 +1,39 @@
+# Two Postgres datasources, one per engine's warehouse -- direct connection
+# (published port for source, internal DNS name for destination), no
+# postgres_fdw. $VAR values come from the grafana service's own environment
+# block in destination/docker-compose.yml; Grafana expands $VAR in
+# provisioning files natively, no extra tooling needed.
+apiVersion: 1
+
+datasources:
+  - name: Telecom Source (SSIS)
+    uid: telecom_src_pg
+    type: postgres
+    access: proxy
+    url: $SRC_PG_HOST:$SRC_PG_PORT
+    database: $SRC_PG_DB
+    user: $SRC_PG_USER
+    secureJsonData:
+      password: $SRC_PG_PASSWORD
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1500
+      maxOpenConns: 5
+    isDefault: false
+    editable: false
+
+  - name: Telecom Destination (NiFi)
+    uid: telecom_dest_pg
+    type: postgres
+    access: proxy
+    url: $DEST_PG_HOST:$DEST_PG_PORT
+    database: $DEST_PG_DB
+    user: $DEST_PG_USER
+    secureJsonData:
+      password: $DEST_PG_PASSWORD
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1500
+      maxOpenConns: 5
+    isDefault: true
+    editable: false

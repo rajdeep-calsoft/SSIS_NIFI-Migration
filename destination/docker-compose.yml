@@ -51,8 +51,56 @@ services:
       start_period: 60s
     restart: unless-stopped
 
+  # Live view of both engines' warehouses. Reads each Postgres directly as
+  # its own datasource (this instance's own `postgres` service by internal
+  # DNS name, source's via host-gateway + its published port) -- no
+  # postgres_fdw, no cross-stack Docker network join, same direct-connection
+  # approach report/introspect.py already uses. NiFi's own processor/queue
+  # state is deliberately NOT here: Grafana has no built-in NiFi REST
+  # support, and `make compare-report` already covers that (see
+  # report/pipeline_state.py) -- this dashboard is for the two warehouses.
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: telecom-dest-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      # Destination (this stack's own postgres, internal DNS name)
+      DEST_PG_HOST: postgres
+      DEST_PG_PORT: "5432"
+      DEST_PG_DB: ${POSTGRES_DB:-telecom}
+      DEST_PG_USER: ${POSTGRES_USER:-telecom_etl}
+      DEST_PG_PASSWORD: ${POSTGRES_PASSWORD}
+      # Source (the OTHER stack's postgres) -- host-gateway + its published
+      # port, never joining source/'s own Docker network (same reasoning the
+      # reference repo documents for its own cross-stack reads: both stacks
+      # name their db service `postgres`, so joining networks would collide).
+      SRC_PG_HOST: host.docker.internal
+      SRC_PG_PORT: ${SOURCE_POSTGRES_PORT:-5436}
+      SRC_PG_DB: ${SOURCE_POSTGRES_DB:-telecom}
+      SRC_PG_USER: ${SOURCE_POSTGRES_USER:-telecom_etl}
+      # Must equal source/.env's POSTGRES_PASSWORD -- see README's note on
+      # the one secret duplicated on purpose across the two stacks.
+      SRC_PG_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${GRAFANA_PORT:-3002}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   dest_pgdata:
+  grafana_data:
   nifi_conf:
   nifi_state:
   nifi_db:

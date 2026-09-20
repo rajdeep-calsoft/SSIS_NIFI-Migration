@@ -1,0 +1,109 @@
+{
+  "title": "Telecom CDR: SSIS vs NiFi",
+  "uid": "telecom-cdr-comparison",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "tags": ["telecom", "ssis2nifi"],
+  "panels": [
+    {
+      "id": 1, "type": "row", "title": "Row agreement",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 }
+    },
+    {
+      "id": 2, "type": "stat", "title": "Fact calls -- source (SSIS)",
+      "datasource": { "type": "postgres", "uid": "telecom_src_pg" },
+      "gridPos": { "x": 0, "y": 1, "w": 6, "h": 4 },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawSql": "SELECT count(*) AS \"Fact Calls\" FROM fact_calls" }
+      ]
+    },
+    {
+      "id": 3, "type": "stat", "title": "Fact calls -- destination (NiFi)",
+      "datasource": { "type": "postgres", "uid": "telecom_dest_pg" },
+      "gridPos": { "x": 6, "y": 1, "w": 6, "h": 4 },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawSql": "SELECT count(*) AS \"Fact Calls\" FROM fact_calls" }
+      ]
+    },
+    {
+      "id": 4, "type": "stat", "title": "Rejected -- source (SSIS)",
+      "datasource": { "type": "postgres", "uid": "telecom_src_pg" },
+      "gridPos": { "x": 12, "y": 1, "w": 6, "h": 4 },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawSql": "SELECT count(*) AS \"Rejected\" FROM quarantine_cdr" }
+      ]
+    },
+    {
+      "id": 5, "type": "stat", "title": "Rejected -- destination (NiFi)",
+      "datasource": { "type": "postgres", "uid": "telecom_dest_pg" },
+      "gridPos": { "x": 18, "y": 1, "w": 6, "h": 4 },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawSql": "SELECT count(*) AS \"Rejected\" FROM quarantine_cdr" }
+      ]
+    },
+    {
+      "id": 6, "type": "row", "title": "Reject reason breakdown",
+      "gridPos": { "x": 0, "y": 5, "w": 24, "h": 1 }
+    },
+    {
+      "id": 7, "type": "table", "title": "Reject reasons -- source (SSIS)",
+      "datasource": { "type": "postgres", "uid": "telecom_src_pg" },
+      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {},
+      "targets": [
+        { "refId": "A", "format": "table",
+          "rawSql": "SELECT reason, count(*) AS count FROM quarantine_cdr GROUP BY reason ORDER BY reason" }
+      ]
+    },
+    {
+      "id": 8, "type": "table", "title": "Reject reasons -- destination (NiFi)",
+      "datasource": { "type": "postgres", "uid": "telecom_dest_pg" },
+      "gridPos": { "x": 12, "y": 6, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {},
+      "targets": [
+        { "refId": "A", "format": "table",
+          "rawSql": "SELECT reason, count(*) AS count FROM quarantine_cdr GROUP BY reason ORDER BY reason" }
+      ]
+    },
+    {
+      "id": 9, "type": "row", "title": "Recent job runs (pipeline state)",
+      "gridPos": { "x": 0, "y": 14, "w": 24, "h": 1 }
+    },
+    {
+      "id": 10, "type": "table", "title": "Job runs -- source ledger",
+      "datasource": { "type": "postgres", "uid": "telecom_src_pg" },
+      "gridPos": { "x": 0, "y": 15, "w": 12, "h": 9 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {},
+      "targets": [
+        { "refId": "A", "format": "table",
+          "rawSql": "SELECT batch_id, source_file, status, records_loaded, records_rejected, duration_ms, started_at FROM control.job_run_log ORDER BY started_at DESC LIMIT 20" }
+      ]
+    },
+    {
+      "id": 11, "type": "table", "title": "Job runs -- destination ledger",
+      "datasource": { "type": "postgres", "uid": "telecom_dest_pg" },
+      "gridPos": { "x": 12, "y": 15, "w": 12, "h": 9 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {},
+      "targets": [
+        { "refId": "A", "format": "table",
+          "rawSql": "SELECT batch_id, source_file, status, records_loaded, records_rejected, duration_ms, started_at FROM control.job_run_log ORDER BY started_at DESC LIMIT 20" }
+      ]
+    }
+  ]
+}
