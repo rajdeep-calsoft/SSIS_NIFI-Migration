@@ -84,15 +84,15 @@ def _pipeline_state(nifi_state: dict, source_runs: list[dict]) -> str:
         badge = f'<span class="badge state-{nifi_state["state"]}">{nifi_state["state"]}</span>'
         proc_rows = "".join(
             f"<tr><td>{html.escape(p['name'])}</td><td class='mono'>{html.escape(p['type'])}</td>"
-            f"<td>{html.escape(p['state'])}</td><td>{html.escape(str(p.get('run_status') or '-'))}</td>"
-            f"<td>{p.get('queued', 0)}</td></tr>"
+            f"<td>{html.escape(p['state'])}</td><td>{html.escape(str(p.get('run_status') or '-'))}</td></tr>"
             for p in nifi_state.get("processors", [])
         )
         bulletins = "".join(f"<li class='bad'>{html.escape(b)}</li>" for b in nifi_state.get("bulletins", []))
         nifi_html = (
             f"<p>group <span class='mono'>{html.escape(nifi_state['group_name'])}</span> {badge} "
-            f"&nbsp; running={nifi_state['running']} stopped={nifi_state['stopped']} invalid={nifi_state['invalid']}</p>"
-            f"<table><tr><th>processor</th><th>type</th><th>state</th><th>run status</th><th>queued</th></tr>{proc_rows}</table>"
+            f"&nbsp; running={nifi_state['running']} stopped={nifi_state['stopped']} "
+            f"invalid={nifi_state['invalid']} &nbsp; queued (whole group)={nifi_state.get('queued_total', '-')}</p>"
+            f"<table><tr><th>processor</th><th>type</th><th>state</th><th>run status</th></tr>{proc_rows}</table>"
             + (f"<p class='bad'>bulletins:</p><ul>{bulletins}</ul>" if bulletins else "")
         )
 

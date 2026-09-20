@@ -30,17 +30,28 @@ def nifi_group_state(nifi_url: str, group_name: str) -> dict:
                                   group.get("invalidCount", 0))
     state = "RUNNING" if stopped == 0 and running else ("STOPPED" if running == 0 else "MIXED")
 
-    processors = client.get(f"/flow/process-groups/{group['id']}/processors").get("processors", [])
+    # "Process Groups" resource, not "Flow" -- /flow/process-groups/{id} only
+    # exposes the group's own overview/status/controller-services/bulletin
+    # sub-paths; listing the processors INSIDE a group is
+    # /process-groups/{id}/processors (no /flow prefix).
+    processors = client.get(f"/process-groups/{group['id']}/processors").get("processors", [])
     proc_detail = [
         {
             "name": p["component"]["name"],
             "type": p["component"]["type"].rsplit(".", 1)[-1],
             "state": p["component"]["state"],
             "run_status": p.get("status", {}).get("aggregateSnapshot", {}).get("runStatus"),
-            "queued": p.get("status", {}).get("aggregateSnapshot", {}).get("flowFilesQueued", 0),
         }
         for p in processors
     ]
+
+    # Queue depth is a per-CONNECTION concept in NiFi, not per-processor;
+    # the group's own status rollup already aggregates it across every
+    # connection inside, which is what "how much is still in flight" means
+    # at the pipeline-state level.
+    status = client.get(f"/flow/process-groups/{group['id']}/status").get(
+        "processGroupStatus", {}).get("aggregateSnapshot", {})
+    queued_total = status.get("flowFilesQueued", 0)
 
     bulletins = client.get("/flow/bulletin-board").get("bulletinBoard", {}).get("bulletins", [])
     group_bulletins = [
@@ -50,7 +61,7 @@ def nifi_group_state(nifi_url: str, group_name: str) -> dict:
 
     return {
         "found": True, "group_name": group_name, "group_id": group["id"], "state": state,
-        "running": running, "stopped": stopped, "invalid": invalid,
+        "running": running, "stopped": stopped, "invalid": invalid, "queued_total": queued_total,
         "processors": proc_detail, "bulletins": group_bulletins,
     }
 
