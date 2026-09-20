@@ -1,0 +1,55 @@
+# Microsoft.Aggregate -> QueryRecord, simple GROUP BY safe case
+#
+# Aggregate's general behaviour is refused (see catalog/support.py's REFUSED
+# reason: semantics differ from a GROUP BY for NULL handling and distinct
+# counting). Only the narrow case `_aggregate_is_simple_groupby` admits
+# converts: every output column is GroupBy/Sum/Min/Max/Count -- AVERAGE and
+# COUNT DISTINCT stay refused, exactly where SSIS and Calcite are documented
+# to genuinely differ. That safe case uses the same MAX/SUM-per-GROUP-BY
+# shape already proven in a live, running NiFi flow --
+# destination/generator/gen/build_flow.py's own "8. Aggregate orders + alert
+# rules" processor -- not invented for this recipe.
+#
+# BEST-EFFORT NOTICE: the SSIS-side property names this reads
+# (AggregationType, SourceColumn) follow the standard, documented SSIS
+# Aggregate transform shape, but were not harvested from a real SQL-Server-
+# Data-Tools-produced .dtsx -- none exists anywhere in this repo containing
+# an Aggregate component. If a real package ever exercises this path and
+# something disagrees, fix the property names here against that real file,
+# the same way every other recipe in this directory was built.
+#
+# Shares its shape with ConditionalSplit/DerivedColumn/Sort on purpose: one
+# QueryRecord, one dynamic property, wired by @dynamic:main.
+
+component_class: Microsoft.Aggregate
+rule_id: aggregate/v1
+support: narrow
+
+requires:
+  - derived.branches
+
+processors:
+  - id: main
+    kind: QueryRecord
+    name: "{{ node.name }}"
+    properties:
+      record-reader: "@service:reader"
+      record-writer: "@service:writer"
+      include-zero-record-flowfiles: "false"
+    properties_from: "derived.branches"
+    auto_terminate: ["original"]
+
+inputs:
+  "Aggregate Input": main
+
+outputs: "@dynamic:main"
+
+diagnostics:
+  - when: "derived.branches"
+    severity: info
+    code: AGGREGATE_SIMPLE_GROUPBY
+    message: >-
+      Converted via QueryRecord GROUP BY (SUM/MIN/MAX/COUNT only) -- if the
+      source used AVERAGE or COUNT DISTINCT this component would have been
+      refused rather than converted, since those differ between SSIS and
+      Calcite.

@@ -1,0 +1,49 @@
+name: telecom-source
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: telecom-source-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-telecom}
+      POSTGRES_USER: ${POSTGRES_USER:-telecom_etl}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - "${POSTGRES_PORT:-5436}:5432"
+    volumes:
+      - source_pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-telecom_etl} -d ${POSTGRES_DB:-telecom}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # One-shot batch generator -- writes N synthetic CDRs into ./data/landing
+  # (shared with destination NiFi, see the top-level Makefile's LANDING_DIR
+  # wiring) and, in the same pass, the ground-truth "what SSIS would have
+  # computed" rows into this Postgres (see telecom_stream/gen/emit.py).
+  # Not started by `docker compose up` -- invoked on demand via
+  # `make generate-data` (profile "bulk" keeps it out of the default set).
+  generator:
+    build: ./telecom_stream
+    container_name: telecom-source-generator
+    profiles: ["bulk"]
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-telecom}
+      PGUSER: ${POSTGRES_USER:-telecom_etl}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      LANDING_DIR: /data/landing
+      GEN_SEED: ${GEN_SEED:-42}
+      ERROR_RATE: ${ERROR_RATE:-0.08}
+    volumes:
+      - ${SHARED_LANDING_DIR:-../destination/data/landing}:/data/landing
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  source_pgdata:

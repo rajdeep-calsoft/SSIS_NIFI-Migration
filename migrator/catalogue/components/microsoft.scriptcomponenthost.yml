@@ -1,0 +1,97 @@
+# Microsoft.ScriptComponentHost (Script Component) -> LookupRecord against a
+# static SSIS error-code catalogue, ONE recognised idiom only
+#
+# Script Component is refused in general -- arbitrary .NET, no faithful
+# translation exists, see catalog/support.py's module docstring. The ONE
+# exception: catalog/script_pattern.py recognises (by exact, bounded pattern
+# match on the actual C# source, not by guessing) the single-statement idiom
+#     Row.<Out> = ComponentMetaData.GetErrorDescription(Row.<In>);
+# which is Microsoft's own documented way to attach a human-readable
+# description to an error-output row's ErrorCode -- see
+# https://learn.microsoft.com/en-us/sql/integration-services/extending-packages-scripting-data-flow-script-component-examples/enhancing-an-error-output-with-the-script-component
+# This is the exact idiom found in this repo's own corpus
+# (corpus/packages/L4.dtsx, L6.dtsx).
+#
+# The lookup table (services below) is the ~20 DTSBC_E_* "base data flow
+# component" error codes, sourced verbatim from Microsoft's own official
+# reference: https://learn.microsoft.com/en-us/sql/integration-services/integration-services-error-and-message-reference
+# (fetched 2026-09-15; see catalogue/data/ssis_dataflow_error_codes.json for
+# the parsed source). This is NOT the complete GetErrorDescription domain --
+# Microsoft's own docs say codes can come from ANY component in the pipeline,
+# an open-ended set -- so a code outside this table simply gets no
+# description filled in (routing-strategy: route-to-success either way, the
+# row is never dropped), rather than a fabricated one. That is a disclosed
+# coverage limit, not a silent wrong answer.
+#
+# Port names ("Input 0" / "Output 0") are the SSIS-assigned defaults for an
+# unrenamed Script Component's single input/output, matching both real
+# examples in this repo's corpus. A real package that renamed these ports
+# would fail to wire (loud KeyError at convert time), not silently miswire.
+
+component_class: Microsoft.ScriptComponentHost
+rule_id: script_get_error_description/v1
+support: narrow
+
+requires:
+  - derived.error_code_column
+  - derived.error_description_column
+
+services:
+  - key: "lookup:{{ node.id }}"
+    kind: SimpleKeyValueLookupService
+    name: "{{ node.name }} SSIS error code catalogue"
+    properties:
+      "-939524094": "The total number of outputs and error outputs is incorrect."
+      "-939524093": "Cannot retrieve output with the given index."
+      "-939524091": "The number of error outputs is incorrect."
+      "-939524090": "Incorrect validation status value. It must be one of the values found in the DTSValidationStatus enumeration."
+      "-939524089": "The input has no synchronous output."
+      "-939524088": "The input has no synchronous error output."
+      "-939524087": "The HowToProcessInput value is not valid. It must be one of the values from the HowToProcessInput enumeration."
+      "-939524086": "Failed to get information for the given row/column from the buffer."
+      "-939524085": "Failed to set information for the given row/column into the buffer."
+      "-939524084": "The property is not valid."
+      "-939524083": "The property was not found."
+      "-939524080": "Error assigning a value to a read-only property."
+      "-939524079": "The component does not allow the insertion of output columns."
+      "-939524078": "The output columns' metadata does not match the associated input columns' metadata. The output columns' metadata will be updated."
+      "-939524077": "There are input columns that do not have associated output columns. The output columns will be added."
+      "-939524076": "There are output columns that do not have associated input columns. The output columns will be removed."
+      "-939524075": "The output columns' metadata does not match the associated input columns' metadata. The input columns will be unmapped."
+      "-939524074": "There are input columns that do not have associated output columns. The input columns will be unmapped."
+      "-939524073": "An input column associated with an output column is already associated with another input column on the same input."
+      "-939524072": "The component does not allow the insertion of external metadata columns."
+
+processors:
+  - id: main
+    kind: LookupRecord
+    name: "{{ node.name }}"
+    properties:
+      record-reader: "@service:reader"
+      record-writer: "@service:writer"
+      lookup-service: "@service:lookup:{{ node.id }}"
+      routing-strategy: route-to-success
+      record-update-strategy: use-property
+      result-record-path: "/{{ derived.error_description_column }}"
+      key: "/{{ derived.error_code_column }}"
+    auto_terminate: ["failure"]
+
+inputs:
+  "Input 0": main
+
+outputs:
+  "Output 0": {processor: main, relationship: success}
+
+dangling_output_policy:
+  "Output 0":
+    - action: route_to_reject
+
+diagnostics:
+  - when: "derived.error_code_column"
+    severity: warn
+    code: SCRIPT_ERROR_CATALOGUE_PARTIAL
+    message: >-
+      Converted via a static lookup of ~20 known SSIS base-data-flow-component
+      error codes (DTSBC_E_*), not the full open-ended GetErrorDescription
+      domain -- an ErrorCode outside that table gets no description filled
+      in, the row is not dropped. See this recipe's own header for the source.

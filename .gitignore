@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.env
+!*.env.example
+out/
+jobs/**/bindings.generated.yml
+destination/nifi/drivers/*.jar
+destination/data/landing/*
+destination/data/rejects/*
+!destination/data/landing/.gitkeep
+!destination/data/rejects/.gitkeep

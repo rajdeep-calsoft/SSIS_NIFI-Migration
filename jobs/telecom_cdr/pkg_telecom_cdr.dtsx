@@ -1,0 +1,581 @@
+<?xml version="1.0"?>
+<DTS:Executable xmlns:DTS="www.microsoft.com/SqlServer/Dts" DTS:refId="Package" DTS:CreationName="Microsoft.Package" DTS:DTSID="{C7DE0002-0000-0000-0000-000000000001}" DTS:ExecutableType="Microsoft.Package" DTS:LocaleID="1033" DTS:ObjectName="Telecom CDR" DTS:PackageType="5" DTS:VersionBuild="1" DTS:VersionGUID="{C7DE0002-0000-0000-0000-000000000002}">
+  <DTS:Property DTS:Name="PackageFormatVersion">8</DTS:Property>
+  <DTS:ConnectionManagers>
+    <DTS:ConnectionManager DTS:refId="Package.ConnectionManagers[Telecom Landing]" DTS:CreationName="FLATFILE" DTS:DTSID="{C7DE0002-0000-0000-0000-000000000010}" DTS:ObjectName="Telecom Landing">
+      <DTS:ObjectData>
+        <DTS:ConnectionManager DTS:ConnectionString="/opt/nifi/data/landing/*.ndjson" />
+      </DTS:ObjectData>
+    </DTS:ConnectionManager>
+    <DTS:ConnectionManager DTS:refId="Package.ConnectionManagers[Telecom Warehouse]" DTS:CreationName="OLEDB" DTS:DTSID="{C7DE0002-0000-0000-0000-000000000011}" DTS:ObjectName="Telecom Warehouse">
+      <DTS:ObjectData>
+        <DTS:ConnectionManager DTS:ConnectionString="Data Source=localhost;Initial Catalog=TelecomDW;Provider=SQLNCLI11.1;Integrated Security=SSPI;Auto Translate=False;" />
+      </DTS:ObjectData>
+    </DTS:ConnectionManager>
+  </DTS:ConnectionManagers>
+  <DTS:Variables />
+  <DTS:Executables>
+    <DTS:Executable DTS:refId="Package\CDR Batch Loop" DTS:CreationName="STOCK:FOREACHLOOP" DTS:Description="Loop for each landing file" DTS:DTSID="{C7DE0002-0000-0000-0000-000000000030}" DTS:ExecutableType="STOCK:FOREACHLOOP" DTS:LocaleID="1033" DTS:ObjectName="CDR Batch Loop">
+      <DTS:ForEachEnumerator DTS:CreationName="Microsoft.ForEachFileEnumerator" DTS:DTSID="{C7DE0002-0000-0000-0000-000000000031}" DTS:ObjectName="Foreach File Enumerator">
+        <DTS:ObjectData>
+          <ForEachFileEnumeratorProperties>
+            <FEFEProperty Folder="/opt/nifi/data/landing" />
+            <FEFEProperty FileSpec="*.ndjson" />
+          </ForEachFileEnumeratorProperties>
+        </DTS:ObjectData>
+      </DTS:ForEachEnumerator>
+      <DTS:Variables />
+      <DTS:Executables>
+    <DTS:Executable DTS:refId="Package\CDR Batch Loop\Ingest CDRs" DTS:CreationName="Microsoft.Pipeline" DTS:Description="Data Flow Task" DTS:DTSID="{C7DE0002-0000-0000-0000-000000000020}" DTS:ExecutableType="Microsoft.Pipeline" DTS:LocaleID="1033" DTS:ObjectName="Ingest CDRs">
+      <DTS:Variables />
+      <DTS:ObjectData>
+        <pipeline version="1">
+          <components>
+            <component refId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records" componentClassID="Microsoft.FlatFileSource" name="Extract CDR Records" usesDispositions="true" version="1">
+              <properties />
+              <connections>
+                <connection refId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Connections[FlatFileConnection]" connectionManagerRefId="Package.ConnectionManagers[Telecom Landing]" name="FlatFileConnection" />
+              </connections>
+              <outputs>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output]" name="Flat File Source Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[call_id]" name="call_id" dataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[call_id]" />
+                    <outputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[subscriber_id]" name="subscriber_id" dataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[subscriber_id]" />
+                    <outputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[tower_id]" name="tower_id" dataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[tower_id]" />
+                    <outputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[plan_code]" name="plan_code" dataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[plan_code]" />
+                    <outputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[call_type]" name="call_type" dataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[call_type]" />
+                    <outputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[call_ts]" name="call_ts" dataType="i8" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[call_ts]" />
+                    <outputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[duration_sec]" name="duration_sec" dataType="i4" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[duration_sec]" />
+                  </outputColumns>
+                  <externalMetadataColumns />
+                </output>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Error Output]" name="Flat File Source Error Output" isErrorOut="true">
+                  <outputColumns />
+                  <externalMetadataColumns />
+                </output>
+              </outputs>
+            </component>
+            <component refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Subscriber" componentClassID="Microsoft.Lookup" name="Lookup Subscriber" usesDispositions="true" version="1">
+              <properties>
+                <property name="SqlCommand" dataType="System.String">select * from (select * from dim_subscriber) as refTable</property>
+                <property name="SqlCommandParam" dataType="System.String">select * from (select * from dim_subscriber) as refTable</property>
+                <property name="ConnectionType" dataType="System.String">0</property>
+                <property name="CacheType" dataType="System.String">0</property>
+                <property name="NoMatchBehavior" dataType="System.String">0</property>
+                <property name="NoMatchCachePercentage" dataType="System.String">0</property>
+                <property name="MaxMemoryUsage" dataType="System.String">25</property>
+                <property name="MaxMemoryUsage64" dataType="System.String">25</property>
+                <property name="DefaultCodePage" dataType="System.String">1252</property>
+                <property name="TreatDuplicateKeysAsError" dataType="System.String">false</property>
+              </properties>
+              <connections>
+                <connection refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Subscriber.Connections[OleDbConnection]" connectionManagerRefId="Package.ConnectionManagers[Telecom Warehouse]" name="OleDbConnection" />
+              </connections>
+              <inputs>
+                <input refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Subscriber.Inputs[Lookup Input]" name="Lookup Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Subscriber.Inputs[Lookup Input].Columns[subscriber_id]" cachedName="subscriber_id" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[subscriber_id]">
+                      <properties>
+                        <property name="JoinToReferenceColumn" dataType="System.String">subscriber_id</property>
+                        <property name="CopyFromReferenceColumn" dataType="System.String" />
+                      </properties>
+                    </inputColumn>
+                  </inputColumns>
+                  <externalMetadataColumns />
+                </input>
+              </inputs>
+              <outputs>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Subscriber.Outputs[Lookup Match Output]" name="Lookup Match Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Subscriber.Outputs[Lookup Match Output].Columns[status]" name="status" dataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Lookup Subscriber.Outputs[Lookup Match Output].Columns[status]">
+                      <properties>
+                        <property name="CopyFromReferenceColumn" dataType="System.String">status</property>
+                      </properties>
+                    </outputColumn>
+                  </outputColumns>
+                  <externalMetadataColumns />
+                </output>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Subscriber.Outputs[Lookup No Match Output]" name="Lookup No Match Output">
+                  <outputColumns />
+                  <externalMetadataColumns />
+                </output>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Subscriber.Outputs[Lookup Error Output]" name="Lookup Error Output" isErrorOut="true">
+                  <outputColumns />
+                  <externalMetadataColumns />
+                </output>
+              </outputs>
+            </component>
+            <component refId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Subscriber" componentClassID="Microsoft.DerivedColumn" name="Tag Unknown Subscriber" usesDispositions="true" version="1">
+              <properties />
+              <inputs>
+                <input refId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Subscriber.Inputs[Derived Column Input]" name="Derived Column Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Subscriber.Inputs[Derived Column Input].Columns[call_id]" cachedName="call_id" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[call_id]" />
+                  </inputColumns>
+                  <externalMetadataColumns />
+                </input>
+              </inputs>
+              <outputs>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Subscriber.Outputs[Derived Column Output]" name="Derived Column Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Subscriber.Outputs[Derived Column Output].Columns[reason]" name="reason" dataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Subscriber.Outputs[Derived Column Output].Columns[reason]">
+                      <properties>
+                        <property name="FriendlyExpression" dataType="System.String">"UNKNOWN_SUBSCRIBER"</property>
+                      </properties>
+                    </outputColumn>
+                  </outputColumns>
+                  <externalMetadataColumns />
+                </output>
+              </outputs>
+            </component>
+            <component refId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Subscriber" componentClassID="Microsoft.OLEDBDestination" name="Reject Unknown Subscriber" usesDispositions="true" version="1">
+              <properties>
+                <property name="OpenRowset" dataType="System.String">[public].[quarantine_cdr]</property>
+                <property name="AccessMode" dataType="System.String">3</property>
+                <property name="FastLoadOptions" dataType="System.String">TABLOCK,CHECK_CONSTRAINTS</property>
+              </properties>
+              <connections>
+                <connection refId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Subscriber.Connections[OleDbConnection]" connectionManagerRefId="Package.ConnectionManagers[Telecom Warehouse]" name="OleDbConnection" />
+              </connections>
+              <inputs>
+                <input refId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Subscriber.Inputs[OLE DB Destination Input]" name="OLE DB Destination Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Subscriber.Inputs[OLE DB Destination Input].Columns[call_id]" cachedName="call_id" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[call_id]" />
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Subscriber.Inputs[OLE DB Destination Input].Columns[reason]" cachedName="reason" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Subscriber.Outputs[Derived Column Output].Columns[reason]" />
+                  </inputColumns>
+                  <externalMetadataColumns />
+                </input>
+              </inputs>
+              <outputs>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Subscriber.Outputs[OLE DB Destination Error Output]" name="OLE DB Destination Error Output" isErrorOut="true">
+                  <outputColumns />
+                  <externalMetadataColumns />
+                </output>
+              </outputs>
+            </component>
+            <component refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Cell Tower" componentClassID="Microsoft.Lookup" name="Lookup Cell Tower" usesDispositions="true" version="1">
+              <properties>
+                <property name="SqlCommand" dataType="System.String">select * from (select * from dim_cell_tower) as refTable</property>
+                <property name="SqlCommandParam" dataType="System.String">select * from (select * from dim_cell_tower) as refTable</property>
+                <property name="ConnectionType" dataType="System.String">0</property>
+                <property name="CacheType" dataType="System.String">1</property>
+                <property name="NoMatchBehavior" dataType="System.String">0</property>
+                <property name="NoMatchCachePercentage" dataType="System.String">0</property>
+                <property name="MaxMemoryUsage" dataType="System.String">25</property>
+                <property name="MaxMemoryUsage64" dataType="System.String">25</property>
+                <property name="DefaultCodePage" dataType="System.String">1252</property>
+                <property name="TreatDuplicateKeysAsError" dataType="System.String">false</property>
+              </properties>
+              <connections>
+                <connection refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Cell Tower.Connections[OleDbConnection]" connectionManagerRefId="Package.ConnectionManagers[Telecom Warehouse]" name="OleDbConnection" />
+              </connections>
+              <inputs>
+                <input refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Cell Tower.Inputs[Lookup Input]" name="Lookup Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Cell Tower.Inputs[Lookup Input].Columns[tower_id]" cachedName="tower_id" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[tower_id]">
+                      <properties>
+                        <property name="JoinToReferenceColumn" dataType="System.String">tower_id</property>
+                        <property name="CopyFromReferenceColumn" dataType="System.String" />
+                      </properties>
+                    </inputColumn>
+                  </inputColumns>
+                  <externalMetadataColumns />
+                </input>
+              </inputs>
+              <outputs>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Cell Tower.Outputs[Lookup Match Output]" name="Lookup Match Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Cell Tower.Outputs[Lookup Match Output].Columns[location]" name="location" dataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Lookup Cell Tower.Outputs[Lookup Match Output].Columns[location]">
+                      <properties>
+                        <property name="CopyFromReferenceColumn" dataType="System.String">location</property>
+                      </properties>
+                    </outputColumn>
+                  </outputColumns>
+                  <externalMetadataColumns />
+                </output>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Cell Tower.Outputs[Lookup No Match Output]" name="Lookup No Match Output">
+                  <outputColumns />
+                  <externalMetadataColumns />
+                </output>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Cell Tower.Outputs[Lookup Error Output]" name="Lookup Error Output" isErrorOut="true">
+                  <outputColumns />
+                  <externalMetadataColumns />
+                </output>
+              </outputs>
+            </component>
+            <component refId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Tower" componentClassID="Microsoft.DerivedColumn" name="Tag Unknown Tower" usesDispositions="true" version="1">
+              <properties />
+              <inputs>
+                <input refId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Tower.Inputs[Derived Column Input]" name="Derived Column Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Tower.Inputs[Derived Column Input].Columns[call_id]" cachedName="call_id" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[call_id]" />
+                  </inputColumns>
+                  <externalMetadataColumns />
+                </input>
+              </inputs>
+              <outputs>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Tower.Outputs[Derived Column Output]" name="Derived Column Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Tower.Outputs[Derived Column Output].Columns[reason]" name="reason" dataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Tower.Outputs[Derived Column Output].Columns[reason]">
+                      <properties>
+                        <property name="FriendlyExpression" dataType="System.String">"UNKNOWN_TOWER"</property>
+                      </properties>
+                    </outputColumn>
+                  </outputColumns>
+                  <externalMetadataColumns />
+                </output>
+              </outputs>
+            </component>
+            <component refId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Tower" componentClassID="Microsoft.OLEDBDestination" name="Reject Unknown Tower" usesDispositions="true" version="1">
+              <properties>
+                <property name="OpenRowset" dataType="System.String">[public].[quarantine_cdr]</property>
+                <property name="AccessMode" dataType="System.String">3</property>
+                <property name="FastLoadOptions" dataType="System.String">TABLOCK,CHECK_CONSTRAINTS</property>
+              </properties>
+              <connections>
+                <connection refId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Tower.Connections[OleDbConnection]" connectionManagerRefId="Package.ConnectionManagers[Telecom Warehouse]" name="OleDbConnection" />
+              </connections>
+              <inputs>
+                <input refId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Tower.Inputs[OLE DB Destination Input]" name="OLE DB Destination Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Tower.Inputs[OLE DB Destination Input].Columns[call_id]" cachedName="call_id" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[call_id]" />
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Tower.Inputs[OLE DB Destination Input].Columns[reason]" cachedName="reason" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Tower.Outputs[Derived Column Output].Columns[reason]" />
+                  </inputColumns>
+                  <externalMetadataColumns />
+                </input>
+              </inputs>
+              <outputs>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Tower.Outputs[OLE DB Destination Error Output]" name="OLE DB Destination Error Output" isErrorOut="true">
+                  <outputColumns />
+                  <externalMetadataColumns />
+                </output>
+              </outputs>
+            </component>
+            <component refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Plan" componentClassID="Microsoft.Lookup" name="Lookup Plan" usesDispositions="true" version="1">
+              <properties>
+                <property name="SqlCommand" dataType="System.String">select * from (select * from dim_plan) as refTable</property>
+                <property name="SqlCommandParam" dataType="System.String">select * from (select * from dim_plan) as refTable</property>
+                <property name="ConnectionType" dataType="System.String">0</property>
+                <property name="CacheType" dataType="System.String">1</property>
+                <property name="NoMatchBehavior" dataType="System.String">0</property>
+                <property name="NoMatchCachePercentage" dataType="System.String">0</property>
+                <property name="MaxMemoryUsage" dataType="System.String">25</property>
+                <property name="MaxMemoryUsage64" dataType="System.String">25</property>
+                <property name="DefaultCodePage" dataType="System.String">1252</property>
+                <property name="TreatDuplicateKeysAsError" dataType="System.String">false</property>
+              </properties>
+              <connections>
+                <connection refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Plan.Connections[OleDbConnection]" connectionManagerRefId="Package.ConnectionManagers[Telecom Warehouse]" name="OleDbConnection" />
+              </connections>
+              <inputs>
+                <input refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Plan.Inputs[Lookup Input]" name="Lookup Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Plan.Inputs[Lookup Input].Columns[plan_code]" cachedName="plan_code" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[plan_code]">
+                      <properties>
+                        <property name="JoinToReferenceColumn" dataType="System.String">plan_code</property>
+                        <property name="CopyFromReferenceColumn" dataType="System.String" />
+                      </properties>
+                    </inputColumn>
+                  </inputColumns>
+                  <externalMetadataColumns />
+                </input>
+              </inputs>
+              <outputs>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Plan.Outputs[Lookup Match Output]" name="Lookup Match Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Plan.Outputs[Lookup Match Output].Columns[rate_per_min]" name="rate_per_min" dataType="r8" lineageId="Package\CDR Batch Loop\Ingest CDRs\Lookup Plan.Outputs[Lookup Match Output].Columns[rate_per_min]">
+                      <properties>
+                        <property name="CopyFromReferenceColumn" dataType="System.String">rate_per_min</property>
+                      </properties>
+                    </outputColumn>
+                    <outputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Plan.Outputs[Lookup Match Output].Columns[currency]" name="currency" dataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Lookup Plan.Outputs[Lookup Match Output].Columns[currency]">
+                      <properties>
+                        <property name="CopyFromReferenceColumn" dataType="System.String">currency</property>
+                      </properties>
+                    </outputColumn>
+                  </outputColumns>
+                  <externalMetadataColumns />
+                </output>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Plan.Outputs[Lookup No Match Output]" name="Lookup No Match Output">
+                  <outputColumns />
+                  <externalMetadataColumns />
+                </output>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Lookup Plan.Outputs[Lookup Error Output]" name="Lookup Error Output" isErrorOut="true">
+                  <outputColumns />
+                  <externalMetadataColumns />
+                </output>
+              </outputs>
+            </component>
+            <component refId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Plan" componentClassID="Microsoft.DerivedColumn" name="Tag Unknown Plan" usesDispositions="true" version="1">
+              <properties />
+              <inputs>
+                <input refId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Plan.Inputs[Derived Column Input]" name="Derived Column Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Plan.Inputs[Derived Column Input].Columns[call_id]" cachedName="call_id" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[call_id]" />
+                  </inputColumns>
+                  <externalMetadataColumns />
+                </input>
+              </inputs>
+              <outputs>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Plan.Outputs[Derived Column Output]" name="Derived Column Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Plan.Outputs[Derived Column Output].Columns[reason]" name="reason" dataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Plan.Outputs[Derived Column Output].Columns[reason]">
+                      <properties>
+                        <property name="FriendlyExpression" dataType="System.String">"UNKNOWN_PLAN"</property>
+                      </properties>
+                    </outputColumn>
+                  </outputColumns>
+                  <externalMetadataColumns />
+                </output>
+              </outputs>
+            </component>
+            <component refId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Plan" componentClassID="Microsoft.OLEDBDestination" name="Reject Unknown Plan" usesDispositions="true" version="1">
+              <properties>
+                <property name="OpenRowset" dataType="System.String">[public].[quarantine_cdr]</property>
+                <property name="AccessMode" dataType="System.String">3</property>
+                <property name="FastLoadOptions" dataType="System.String">TABLOCK,CHECK_CONSTRAINTS</property>
+              </properties>
+              <connections>
+                <connection refId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Plan.Connections[OleDbConnection]" connectionManagerRefId="Package.ConnectionManagers[Telecom Warehouse]" name="OleDbConnection" />
+              </connections>
+              <inputs>
+                <input refId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Plan.Inputs[OLE DB Destination Input]" name="OLE DB Destination Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Plan.Inputs[OLE DB Destination Input].Columns[call_id]" cachedName="call_id" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[call_id]" />
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Plan.Inputs[OLE DB Destination Input].Columns[reason]" cachedName="reason" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Plan.Outputs[Derived Column Output].Columns[reason]" />
+                  </inputColumns>
+                  <externalMetadataColumns />
+                </input>
+              </inputs>
+              <outputs>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Plan.Outputs[OLE DB Destination Error Output]" name="OLE DB Destination Error Output" isErrorOut="true">
+                  <outputColumns />
+                  <externalMetadataColumns />
+                </output>
+              </outputs>
+            </component>
+            <component refId="Package\CDR Batch Loop\Ingest CDRs\Validate Duration" componentClassID="Microsoft.ConditionalSplit" name="Validate Duration" usesDispositions="true" version="1">
+              <properties />
+              <inputs>
+                <input refId="Package\CDR Batch Loop\Ingest CDRs\Validate Duration.Inputs[Conditional Split Input]" name="Conditional Split Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Validate Duration.Inputs[Conditional Split Input].Columns[duration_sec]" cachedName="duration_sec" cachedDataType="i4" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[duration_sec]" />
+                  </inputColumns>
+                  <externalMetadataColumns />
+                </input>
+              </inputs>
+              <outputs>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Validate Duration.Outputs[bad_duration]" name="bad_duration">
+                  <properties>
+                    <property name="FriendlyExpression" dataType="System.String">!(duration_sec &gt;= 0 &amp;&amp; duration_sec &lt;= 7200)</property>
+                    <property name="Order" dataType="System.String">0</property>
+                  </properties>
+                  <outputColumns />
+                  <externalMetadataColumns />
+                </output>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Validate Duration.Outputs[clean]" name="clean">
+                  <outputColumns />
+                  <externalMetadataColumns />
+                </output>
+              </outputs>
+            </component>
+            <component refId="Package\CDR Batch Loop\Ingest CDRs\Tag Bad Duration" componentClassID="Microsoft.DerivedColumn" name="Tag Bad Duration" usesDispositions="true" version="1">
+              <properties />
+              <inputs>
+                <input refId="Package\CDR Batch Loop\Ingest CDRs\Tag Bad Duration.Inputs[Derived Column Input]" name="Derived Column Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Tag Bad Duration.Inputs[Derived Column Input].Columns[call_id]" cachedName="call_id" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[call_id]" />
+                  </inputColumns>
+                  <externalMetadataColumns />
+                </input>
+              </inputs>
+              <outputs>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Tag Bad Duration.Outputs[Derived Column Output]" name="Derived Column Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Tag Bad Duration.Outputs[Derived Column Output].Columns[reason]" name="reason" dataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Tag Bad Duration.Outputs[Derived Column Output].Columns[reason]">
+                      <properties>
+                        <property name="FriendlyExpression" dataType="System.String">"BAD_DURATION"</property>
+                      </properties>
+                    </outputColumn>
+                  </outputColumns>
+                  <externalMetadataColumns />
+                </output>
+              </outputs>
+            </component>
+            <component refId="Package\CDR Batch Loop\Ingest CDRs\Reject Bad Duration" componentClassID="Microsoft.OLEDBDestination" name="Reject Bad Duration" usesDispositions="true" version="1">
+              <properties>
+                <property name="OpenRowset" dataType="System.String">[public].[quarantine_cdr]</property>
+                <property name="AccessMode" dataType="System.String">3</property>
+                <property name="FastLoadOptions" dataType="System.String">TABLOCK,CHECK_CONSTRAINTS</property>
+              </properties>
+              <connections>
+                <connection refId="Package\CDR Batch Loop\Ingest CDRs\Reject Bad Duration.Connections[OleDbConnection]" connectionManagerRefId="Package.ConnectionManagers[Telecom Warehouse]" name="OleDbConnection" />
+              </connections>
+              <inputs>
+                <input refId="Package\CDR Batch Loop\Ingest CDRs\Reject Bad Duration.Inputs[OLE DB Destination Input]" name="OLE DB Destination Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Reject Bad Duration.Inputs[OLE DB Destination Input].Columns[call_id]" cachedName="call_id" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[call_id]" />
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Reject Bad Duration.Inputs[OLE DB Destination Input].Columns[reason]" cachedName="reason" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Tag Bad Duration.Outputs[Derived Column Output].Columns[reason]" />
+                  </inputColumns>
+                  <externalMetadataColumns />
+                </input>
+              </inputs>
+              <outputs>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Reject Bad Duration.Outputs[OLE DB Destination Error Output]" name="OLE DB Destination Error Output" isErrorOut="true">
+                  <outputColumns />
+                  <externalMetadataColumns />
+                </output>
+              </outputs>
+            </component>
+            <component refId="Package\CDR Batch Loop\Ingest CDRs\Compute Cost" componentClassID="Microsoft.DerivedColumn" name="Compute Cost" usesDispositions="true" version="1">
+              <properties />
+              <inputs>
+                <input refId="Package\CDR Batch Loop\Ingest CDRs\Compute Cost.Inputs[Derived Column Input]" name="Derived Column Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Compute Cost.Inputs[Derived Column Input].Columns[duration_sec]" cachedName="duration_sec" cachedDataType="i4" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[duration_sec]" />
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Compute Cost.Inputs[Derived Column Input].Columns[rate_per_min]" cachedName="rate_per_min" cachedDataType="r8" lineageId="Package\CDR Batch Loop\Ingest CDRs\Lookup Plan.Outputs[Lookup Match Output].Columns[rate_per_min]" />
+                  </inputColumns>
+                  <externalMetadataColumns />
+                </input>
+              </inputs>
+              <outputs>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Compute Cost.Outputs[Derived Column Output]" name="Derived Column Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Compute Cost.Outputs[Derived Column Output].Columns[cost]" name="cost" dataType="r8" lineageId="Package\CDR Batch Loop\Ingest CDRs\Compute Cost.Outputs[Derived Column Output].Columns[cost]">
+                      <properties>
+                        <property name="FriendlyExpression" dataType="System.String">(duration_sec / 60.0) * rate_per_min</property>
+                      </properties>
+                    </outputColumn>
+                  </outputColumns>
+                  <externalMetadataColumns />
+                </output>
+              </outputs>
+            </component>
+            <component refId="Package\CDR Batch Loop\Ingest CDRs\Load Fact Calls" componentClassID="Microsoft.OLEDBDestination" name="Load Fact Calls" usesDispositions="true" version="1">
+              <properties>
+                <property name="OpenRowset" dataType="System.String">[public].[fact_calls]</property>
+                <property name="AccessMode" dataType="System.String">3</property>
+                <property name="FastLoadOptions" dataType="System.String">TABLOCK,CHECK_CONSTRAINTS</property>
+              </properties>
+              <connections>
+                <connection refId="Package\CDR Batch Loop\Ingest CDRs\Load Fact Calls.Connections[OleDbConnection]" connectionManagerRefId="Package.ConnectionManagers[Telecom Warehouse]" name="OleDbConnection" />
+              </connections>
+              <inputs>
+                <input refId="Package\CDR Batch Loop\Ingest CDRs\Load Fact Calls.Inputs[OLE DB Destination Input]" name="OLE DB Destination Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Load Fact Calls.Inputs[OLE DB Destination Input].Columns[call_id]" cachedName="call_id" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[call_id]" />
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Load Fact Calls.Inputs[OLE DB Destination Input].Columns[subscriber_id]" cachedName="subscriber_id" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[subscriber_id]" />
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Load Fact Calls.Inputs[OLE DB Destination Input].Columns[tower_id]" cachedName="tower_id" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[tower_id]" />
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Load Fact Calls.Inputs[OLE DB Destination Input].Columns[plan_code]" cachedName="plan_code" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[plan_code]" />
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Load Fact Calls.Inputs[OLE DB Destination Input].Columns[call_type]" cachedName="call_type" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[call_type]" />
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Load Fact Calls.Inputs[OLE DB Destination Input].Columns[call_ts]" cachedName="call_ts" cachedDataType="i8" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[call_ts]" />
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Load Fact Calls.Inputs[OLE DB Destination Input].Columns[duration_sec]" cachedName="duration_sec" cachedDataType="i4" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[duration_sec]" />
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Load Fact Calls.Inputs[OLE DB Destination Input].Columns[cost]" cachedName="cost" cachedDataType="r8" lineageId="Package\CDR Batch Loop\Ingest CDRs\Compute Cost.Outputs[Derived Column Output].Columns[cost]" />
+                  </inputColumns>
+                  <externalMetadataColumns />
+                </input>
+              </inputs>
+              <outputs>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Load Fact Calls.Outputs[OLE DB Destination Error Output]" name="OLE DB Destination Error Output" isErrorOut="true">
+                  <outputColumns />
+                  <externalMetadataColumns />
+                </output>
+              </outputs>
+            </component>
+            <component refId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage" componentClassID="Microsoft.Aggregate" name="Aggregate Subscriber Usage" usesDispositions="true" version="1">
+              <properties />
+              <inputs>
+                <input refId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage.Inputs[Aggregate Input]" name="Aggregate Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage.Inputs[Aggregate Input].Columns[call_id]" cachedName="call_id" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[call_id]" />
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage.Inputs[Aggregate Input].Columns[subscriber_id]" cachedName="subscriber_id" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[subscriber_id]" />
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage.Inputs[Aggregate Input].Columns[duration_sec]" cachedName="duration_sec" cachedDataType="i4" lineageId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output].Columns[duration_sec]" />
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage.Inputs[Aggregate Input].Columns[cost]" cachedName="cost" cachedDataType="r8" lineageId="Package\CDR Batch Loop\Ingest CDRs\Compute Cost.Outputs[Derived Column Output].Columns[cost]" />
+                  </inputColumns>
+                  <externalMetadataColumns />
+                </input>
+              </inputs>
+              <outputs>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage.Outputs[Aggregate Output 1]" name="Aggregate Output 1">
+                  <outputColumns>
+                    <outputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage.Outputs[Aggregate Output 1].Columns[subscriber_id]" name="subscriber_id" dataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage.Outputs[Aggregate Output 1].Columns[subscriber_id]">
+                      <properties>
+                        <property name="AggregationType" dataType="System.String">GroupBy</property>
+                      </properties>
+                    </outputColumn>
+                    <outputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage.Outputs[Aggregate Output 1].Columns[call_count]" name="call_count" dataType="i4" lineageId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage.Outputs[Aggregate Output 1].Columns[call_count]">
+                      <properties>
+                        <property name="AggregationType" dataType="System.String">Count</property>
+                        <property name="SourceColumn" dataType="System.String">call_id</property>
+                      </properties>
+                    </outputColumn>
+                    <outputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage.Outputs[Aggregate Output 1].Columns[total_duration_sec]" name="total_duration_sec" dataType="i4" lineageId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage.Outputs[Aggregate Output 1].Columns[total_duration_sec]">
+                      <properties>
+                        <property name="AggregationType" dataType="System.String">Sum</property>
+                        <property name="SourceColumn" dataType="System.String">duration_sec</property>
+                      </properties>
+                    </outputColumn>
+                    <outputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage.Outputs[Aggregate Output 1].Columns[total_cost]" name="total_cost" dataType="r8" lineageId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage.Outputs[Aggregate Output 1].Columns[total_cost]">
+                      <properties>
+                        <property name="AggregationType" dataType="System.String">Sum</property>
+                        <property name="SourceColumn" dataType="System.String">cost</property>
+                      </properties>
+                    </outputColumn>
+                  </outputColumns>
+                  <externalMetadataColumns />
+                </output>
+              </outputs>
+            </component>
+            <component refId="Package\CDR Batch Loop\Ingest CDRs\Load Subscriber Daily Usage" componentClassID="Microsoft.OLEDBDestination" name="Load Subscriber Daily Usage" usesDispositions="true" version="1">
+              <properties>
+                <property name="OpenRowset" dataType="System.String">[public].[subscriber_daily_usage]</property>
+                <property name="AccessMode" dataType="System.String">3</property>
+                <property name="FastLoadOptions" dataType="System.String">TABLOCK,CHECK_CONSTRAINTS</property>
+              </properties>
+              <connections>
+                <connection refId="Package\CDR Batch Loop\Ingest CDRs\Load Subscriber Daily Usage.Connections[OleDbConnection]" connectionManagerRefId="Package.ConnectionManagers[Telecom Warehouse]" name="OleDbConnection" />
+              </connections>
+              <inputs>
+                <input refId="Package\CDR Batch Loop\Ingest CDRs\Load Subscriber Daily Usage.Inputs[OLE DB Destination Input]" name="OLE DB Destination Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Load Subscriber Daily Usage.Inputs[OLE DB Destination Input].Columns[subscriber_id]" cachedName="subscriber_id" cachedDataType="wstr" lineageId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage.Outputs[Aggregate Output 1].Columns[subscriber_id]" />
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Load Subscriber Daily Usage.Inputs[OLE DB Destination Input].Columns[call_count]" cachedName="call_count" cachedDataType="i4" lineageId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage.Outputs[Aggregate Output 1].Columns[call_count]" />
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Load Subscriber Daily Usage.Inputs[OLE DB Destination Input].Columns[total_duration_sec]" cachedName="total_duration_sec" cachedDataType="i4" lineageId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage.Outputs[Aggregate Output 1].Columns[total_duration_sec]" />
+                    <inputColumn refId="Package\CDR Batch Loop\Ingest CDRs\Load Subscriber Daily Usage.Inputs[OLE DB Destination Input].Columns[total_cost]" cachedName="total_cost" cachedDataType="r8" lineageId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage.Outputs[Aggregate Output 1].Columns[total_cost]" />
+                  </inputColumns>
+                  <externalMetadataColumns />
+                </input>
+              </inputs>
+              <outputs>
+                <output refId="Package\CDR Batch Loop\Ingest CDRs\Load Subscriber Daily Usage.Outputs[OLE DB Destination Error Output]" name="OLE DB Destination Error Output" isErrorOut="true">
+                  <outputColumns />
+                  <externalMetadataColumns />
+                </output>
+              </outputs>
+            </component>
+          </components>
+          <paths>
+            <path refId="Package\CDR Batch Loop\Ingest CDRs.Paths[Flat File Source Output -&gt; Lookup Subscriber]" name="Flat File Source Output -&gt; Lookup Subscriber" startId="Package\CDR Batch Loop\Ingest CDRs\Extract CDR Records.Outputs[Flat File Source Output]" endId="Package\CDR Batch Loop\Ingest CDRs\Lookup Subscriber.Inputs[Lookup Input]" />
+            <path refId="Package\CDR Batch Loop\Ingest CDRs.Paths[Lookup No Match Output -&gt; Tag Unknown Subscriber]" name="Lookup No Match Output -&gt; Tag Unknown Subscriber" startId="Package\CDR Batch Loop\Ingest CDRs\Lookup Subscriber.Outputs[Lookup No Match Output]" endId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Subscriber.Inputs[Derived Column Input]" />
+            <path refId="Package\CDR Batch Loop\Ingest CDRs.Paths[Derived Column Output -&gt; Reject Unknown Subscriber]" name="Derived Column Output -&gt; Reject Unknown Subscriber" startId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Subscriber.Outputs[Derived Column Output]" endId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Subscriber.Inputs[OLE DB Destination Input]" />
+            <path refId="Package\CDR Batch Loop\Ingest CDRs.Paths[Lookup Match Output -&gt; Lookup Cell Tower]" name="Lookup Match Output -&gt; Lookup Cell Tower" startId="Package\CDR Batch Loop\Ingest CDRs\Lookup Subscriber.Outputs[Lookup Match Output]" endId="Package\CDR Batch Loop\Ingest CDRs\Lookup Cell Tower.Inputs[Lookup Input]" />
+            <path refId="Package\CDR Batch Loop\Ingest CDRs.Paths[Lookup No Match Output -&gt; Tag Unknown Tower]" name="Lookup No Match Output -&gt; Tag Unknown Tower" startId="Package\CDR Batch Loop\Ingest CDRs\Lookup Cell Tower.Outputs[Lookup No Match Output]" endId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Tower.Inputs[Derived Column Input]" />
+            <path refId="Package\CDR Batch Loop\Ingest CDRs.Paths[Derived Column Output -&gt; Reject Unknown Tower]" name="Derived Column Output -&gt; Reject Unknown Tower" startId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Tower.Outputs[Derived Column Output]" endId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Tower.Inputs[OLE DB Destination Input]" />
+            <path refId="Package\CDR Batch Loop\Ingest CDRs.Paths[Lookup Match Output -&gt; Lookup Plan]" name="Lookup Match Output -&gt; Lookup Plan" startId="Package\CDR Batch Loop\Ingest CDRs\Lookup Cell Tower.Outputs[Lookup Match Output]" endId="Package\CDR Batch Loop\Ingest CDRs\Lookup Plan.Inputs[Lookup Input]" />
+            <path refId="Package\CDR Batch Loop\Ingest CDRs.Paths[Lookup No Match Output -&gt; Tag Unknown Plan]" name="Lookup No Match Output -&gt; Tag Unknown Plan" startId="Package\CDR Batch Loop\Ingest CDRs\Lookup Plan.Outputs[Lookup No Match Output]" endId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Plan.Inputs[Derived Column Input]" />
+            <path refId="Package\CDR Batch Loop\Ingest CDRs.Paths[Derived Column Output -&gt; Reject Unknown Plan]" name="Derived Column Output -&gt; Reject Unknown Plan" startId="Package\CDR Batch Loop\Ingest CDRs\Tag Unknown Plan.Outputs[Derived Column Output]" endId="Package\CDR Batch Loop\Ingest CDRs\Reject Unknown Plan.Inputs[OLE DB Destination Input]" />
+            <path refId="Package\CDR Batch Loop\Ingest CDRs.Paths[Lookup Match Output -&gt; Validate Duration]" name="Lookup Match Output -&gt; Validate Duration" startId="Package\CDR Batch Loop\Ingest CDRs\Lookup Plan.Outputs[Lookup Match Output]" endId="Package\CDR Batch Loop\Ingest CDRs\Validate Duration.Inputs[Conditional Split Input]" />
+            <path refId="Package\CDR Batch Loop\Ingest CDRs.Paths[bad_duration -&gt; Tag Bad Duration]" name="bad_duration -&gt; Tag Bad Duration" startId="Package\CDR Batch Loop\Ingest CDRs\Validate Duration.Outputs[bad_duration]" endId="Package\CDR Batch Loop\Ingest CDRs\Tag Bad Duration.Inputs[Derived Column Input]" />
+            <path refId="Package\CDR Batch Loop\Ingest CDRs.Paths[Derived Column Output -&gt; Reject Bad Duration]" name="Derived Column Output -&gt; Reject Bad Duration" startId="Package\CDR Batch Loop\Ingest CDRs\Tag Bad Duration.Outputs[Derived Column Output]" endId="Package\CDR Batch Loop\Ingest CDRs\Reject Bad Duration.Inputs[OLE DB Destination Input]" />
+            <path refId="Package\CDR Batch Loop\Ingest CDRs.Paths[clean -&gt; Compute Cost]" name="clean -&gt; Compute Cost" startId="Package\CDR Batch Loop\Ingest CDRs\Validate Duration.Outputs[clean]" endId="Package\CDR Batch Loop\Ingest CDRs\Compute Cost.Inputs[Derived Column Input]" />
+            <path refId="Package\CDR Batch Loop\Ingest CDRs.Paths[Derived Column Output -&gt; Load Fact Calls]" name="Derived Column Output -&gt; Load Fact Calls" startId="Package\CDR Batch Loop\Ingest CDRs\Compute Cost.Outputs[Derived Column Output]" endId="Package\CDR Batch Loop\Ingest CDRs\Load Fact Calls.Inputs[OLE DB Destination Input]" />
+            <path refId="Package\CDR Batch Loop\Ingest CDRs.Paths[Derived Column Output -&gt; Aggregate Subscriber Usage]" name="Derived Column Output -&gt; Aggregate Subscriber Usage" startId="Package\CDR Batch Loop\Ingest CDRs\Compute Cost.Outputs[Derived Column Output]" endId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage.Inputs[Aggregate Input]" />
+            <path refId="Package\CDR Batch Loop\Ingest CDRs.Paths[Aggregate Output 1 -&gt; Load Subscriber Daily Usage]" name="Aggregate Output 1 -&gt; Load Subscriber Daily Usage" startId="Package\CDR Batch Loop\Ingest CDRs\Aggregate Subscriber Usage.Outputs[Aggregate Output 1]" endId="Package\CDR Batch Loop\Ingest CDRs\Load Subscriber Daily Usage.Inputs[OLE DB Destination Input]" />
+          </paths>
+        </pipeline>
+      </DTS:ObjectData>
+    </DTS:Executable>
+      </DTS:Executables>
+    </DTS:Executable>
+  </DTS:Executables>
+</DTS:Executable>

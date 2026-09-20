@@ -1,0 +1,98 @@
+# Microsoft.FlatFileSource -> GetFile + CSVReader
+#
+# The source component becomes two things: a processor that picks the file up,
+# and the reader service every downstream record processor uses to parse it.
+#
+# THE DELIMITER TRAP. A flat file connection manager stores RowDelimiter on the
+# connection AND a ColumnDelimiter per column, where the final column's
+# delimiter is really the row delimiter. In the corpus, RowDelimiter is the
+# empty string and the last column carries _x000D__x000A_. Reading RowDelimiter
+# naively yields "" and a reader that swallows the whole file as one row, so
+# the analyzer derives it and flags anything it cannot.
+
+component_class: Microsoft.FlatFileSource
+also: ["{D23FD76B-F51D-420F-BBCB-19CBF6AC1AB4}"]
+rule_id: flatfilesource/v1
+support: full
+
+requires:
+  - connections.FlatFileConnection
+
+services:
+  # Two alternative "reader" entries, mutually exclusive by `when`. Only one
+  # ever runs (`_service` interns by key, and exactly one guard is true), so
+  # the flow still ends up with a single reader service either way. The
+  # binding decides which -- `reader_kind: ndjson` for a package whose
+  # landing files are NDJSON (this converter's own `verify-behavior` batches
+  # and destination/spec/fixtures' tier fixtures both are), nothing set (the
+  # default) for genuinely delimited text.
+  - key: "reader"
+    kind: CSVReader
+    name: "SourceReader"
+    when: "binding.reader_kind != 'ndjson'"
+    properties:
+      # Explicit schema, not infer-schema. These files have no header row
+      # (HeaderRowsToSkip is absent), so inference would name every field
+      # after the first row of DATA and lose that row.
+      schema-access-strategy: schema-text-property
+      schema-text: "{{ derived.avro_schema }}"
+      # CSVReader's required properties are its DISPLAY names. The
+      # `csvutils-*` forms also exist but are optional legacy aliases, and
+      # NiFi rejects them as "not a supported property" -- so a reader
+      # configured with them never enables. Harvested from a live instance's
+      # /controller-services/{id} descriptors, not from documentation.
+      CSV Format: custom
+      Value Separator: "{{ derived.column_delimiter }}"
+      Record Separator: "{{ derived.row_delimiter }}"
+      Skip Header Line: "{{ derived.has_header }}"
+      Quote Character: '"'
+      Escape Character: "\\"
+      csvutils-character-set: "{{ derived.charset }}"
+  - key: "reader"
+    kind: JsonTreeReader
+    name: "SourceReader"
+    when: "binding.reader_kind == 'ndjson'"
+    properties:
+      # NDJSON records are self-describing field names -- unlike a headerless
+      # flat file, there is no "first row of data" to lose by inferring.
+      schema-access-strategy: infer-schema
+  - key: "writer"
+    kind: JsonRecordSetWriter
+    name: "RecordWriter"
+    properties:
+      schema-access-strategy: inherit-record-schema
+      output-grouping: output-array
+
+processors:
+  - id: main
+    kind: GetFile
+    name: "{{ node.name }}"
+    properties:
+      Input Directory: "{{ binding.directory }}"
+      File Filter: "{{ binding.file_filter }}"
+      Keep Source File: "false"
+    scheduling_period: "10 sec"
+
+inputs: {}
+
+outputs:
+  "Flat File Source Output": {processor: main, relationship: success}
+  "Flat File Source Error Output": {processor: main, relationship: failure}
+
+dangling_output_policy:
+  "Flat File Source Error Output":
+    - action: route_to_reject
+  "Flat File Source Output":
+    - action: auto_terminate
+
+diagnostics:
+  - when: "derived.per_column_delimiters"
+    severity: error
+    code: FLATFILE_PER_COLUMN_DELIMITER
+    message: >-
+      Columns use different delimiters. NiFi's CSVReader takes a single value
+      separator, so this file cannot be read faithfully without manual work.
+  - when: "derived.row_delimiter_inferred"
+    severity: info
+    code: FLATFILE_ROW_DELIMITER_INFERRED
+    message: "RowDelimiter was empty; inferred from the final column's delimiter."

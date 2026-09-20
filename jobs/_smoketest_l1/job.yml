@@ -1,0 +1,13 @@
+name: _smoketest_l1
+package: L1.dtsx
+nifi:
+  url: http://localhost:9999
+destination_db:
+  db_type: PostgreSQL
+  host: localhost
+  port: 5555
+  dbname: smoketest
+  user: smoketest
+  password_ref: SMOKETEST_DB_PASSWORD
+  identifier_case: lower
+  landing_dir: /opt/nifi/data/landing

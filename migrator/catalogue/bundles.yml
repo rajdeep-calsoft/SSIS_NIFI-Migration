@@ -1,0 +1,156 @@
+# NiFi bundle coordinates and processor types.
+#
+# HARVESTED, NOT REMEMBERED. Every value here was read out of
+# ~/Desktop/NIFI-FLOW/nifi/flow/ecommerce_etl.flow.json -- a flow that is known
+# to import into NiFi 1.27.0 and run. Property keys and bundle coordinates are
+# version-specific and change across 1.x minors, so writing them from memory or
+# from documentation is how you get a flow that imports with a red canvas.
+#
+# To retarget a different NiFi: export a working flow from THAT version and
+# re-harvest. `ssis2nifi doctor` (not yet built) will diff this against a live
+# instance's /flow/processor-types.
+
+nifi_version: "1.27.0"
+
+bundles:
+  standard:
+    group: org.apache.nifi
+    artifact: nifi-standard-nar
+    version: "1.27.0"
+  update_attribute:
+    group: org.apache.nifi
+    artifact: nifi-update-attribute-nar
+    version: "1.27.0"
+  record_serialization:
+    group: org.apache.nifi
+    artifact: nifi-record-serialization-services-nar
+    version: "1.27.0"
+  lookup_services:
+    group: org.apache.nifi
+    artifact: nifi-lookup-services-nar
+    version: "1.27.0"
+  dbcp:
+    group: org.apache.nifi
+    artifact: nifi-dbcp-service-nar
+    version: "1.27.0"
+  registry:
+    group: org.apache.nifi
+    artifact: nifi-registry-nar
+    version: "1.27.0"
+
+# Short name -> (fully qualified type, bundle). The short names are what the
+# component recipes use, so a recipe never spells a Java class name.
+processors:
+  GetFile:            {type: org.apache.nifi.processors.standard.GetFile,           bundle: standard}
+  ListFile:           {type: org.apache.nifi.processors.standard.ListFile,          bundle: standard}
+  FetchFile:          {type: org.apache.nifi.processors.standard.FetchFile,         bundle: standard}
+  PutFile:            {type: org.apache.nifi.processors.standard.PutFile,           bundle: standard}
+  LookupRecord:       {type: org.apache.nifi.processors.standard.LookupRecord,      bundle: standard}
+  PutDatabaseRecord:  {type: org.apache.nifi.processors.standard.PutDatabaseRecord, bundle: standard}
+  QueryRecord:        {type: org.apache.nifi.processors.standard.QueryRecord,       bundle: standard}
+  UpdateRecord:       {type: org.apache.nifi.processors.standard.UpdateRecord,      bundle: standard}
+  ValidateRecord:     {type: org.apache.nifi.processors.standard.ValidateRecord,    bundle: standard}
+  RouteOnAttribute:   {type: org.apache.nifi.processors.standard.RouteOnAttribute,  bundle: standard}
+  ExecuteSQL:         {type: org.apache.nifi.processors.standard.ExecuteSQL,        bundle: standard}
+  PutSQL:             {type: org.apache.nifi.processors.standard.PutSQL,            bundle: standard}
+  UpdateAttribute:    {type: org.apache.nifi.processors.attributes.UpdateAttribute, bundle: update_attribute}
+  LogAttribute:       {type: org.apache.nifi.processors.standard.LogAttribute,      bundle: standard}
+
+controller_services:
+  CSVReader:
+    type: org.apache.nifi.csv.CSVReader
+    bundle: record_serialization
+    apis: [RecordReaderFactory]
+  JsonTreeReader:
+    type: org.apache.nifi.json.JsonTreeReader
+    bundle: record_serialization
+    apis: [RecordReaderFactory]
+  JsonRecordSetWriter:
+    type: org.apache.nifi.json.JsonRecordSetWriter
+    bundle: record_serialization
+    apis: [RecordSetWriterFactory]
+  DatabaseRecordLookupService:
+    type: org.apache.nifi.lookup.db.DatabaseRecordLookupService
+    bundle: lookup_services
+    apis: [RecordLookupService, LookupService]
+  DBCPConnectionPool:
+    type: org.apache.nifi.dbcp.DBCPConnectionPool
+    bundle: dbcp
+    apis: [DBCPService]
+  AvroSchemaRegistry:
+    type: org.apache.nifi.schemaregistry.services.AvroSchemaRegistry
+    bundle: registry
+    apis: [SchemaRegistry]
+  # Not in ecommerce_etl.flow.json (this exact service isn't used by the
+  # hand-built reference flow) -- harvested instead by querying the live
+  # target NiFi (1.27.0, this project's own destination stack) directly:
+  # GET /nifi-api/flow/controller-service-types, and by creating and deleting
+  # a temporary instance of it and org.apache.nifi.processors.standard.
+  # LookupRecord to confirm they actually validate against each other. Same
+  # bundle (nifi-lookup-services-nar) as the already-proven
+  # DatabaseRecordLookupService above.
+  SimpleKeyValueLookupService:
+    type: org.apache.nifi.lookup.SimpleKeyValueLookupService
+    bundle: lookup_services
+    apis: [StringLookupService, LookupService]
+
+# Relationships each processor type declares.
+#
+# NiFi marks a processor INVALID unless every one of its relationships is
+# either connected to something or explicitly auto-terminated. That single
+# rule is the most common reason a generated flow imports to a red canvas, so
+# the emitter asserts completeness against this table rather than hoping.
+#
+# LookupRecord's set depends on routing-strategy: route-to-matched-unmatched
+# gives matched/unmatched, route-to-success gives success. The emitter reads
+# the property it just set.
+relationships:
+  GetFile: [success]
+  ListFile: [success]
+  FetchFile: [success, not.found, permission.denied, failure]
+  PutFile: [success, failure]
+  LookupRecord:
+    route-to-matched-unmatched: [matched, unmatched, failure]
+    route-to-success: [success, failure]
+  PutDatabaseRecord: [success, failure, retry]
+  QueryRecord: [original, failure]
+  UpdateRecord: [success, failure]
+  ValidateRecord: [valid, invalid, failure]
+  RouteOnAttribute: [unmatched]
+  UpdateAttribute: [success]
+  LogAttribute: [success]
+  ExecuteSQL: [success, failure]
+  PutSQL: [success, failure, retry]
+
+# The interfaces each controller service implements. NiFi uses these to decide
+# whether a service is an acceptable value for a processor property -- a
+# LookupRecord's "lookup-service" will not resolve to a service that does not
+# declare LookupService. Omitting them makes an otherwise correct flow fail to
+# import. All live in nifi-standard-services-api-nar.
+service_apis:
+  RecordReaderFactory:     org.apache.nifi.serialization.RecordReaderFactory
+  RecordSetWriterFactory:  org.apache.nifi.serialization.RecordSetWriterFactory
+  RecordLookupService:     org.apache.nifi.lookup.RecordLookupService
+  LookupService:           org.apache.nifi.lookup.LookupService
+  StringLookupService:     org.apache.nifi.lookup.StringLookupService
+  DBCPService:             org.apache.nifi.dbcp.DBCPService
+  SchemaRegistry:          org.apache.nifi.schemaregistry.services.SchemaRegistry
+
+service_api_bundle:
+  group: org.apache.nifi
+  artifact: nifi-standard-services-api-nar
+  version: "1.27.0"
+
+# Properties whose values are DATABASE IDENTIFIERS (table, schema, column).
+#
+# Identifier casing is dialect-specific and it silently breaks a retarget:
+# SQL Server is case-insensitive, while Postgres folds unquoted identifiers to
+# lower case, so `dbo.NewFactCurrencyRate` from the .dtsx becomes "table not
+# found" against a Postgres target. A binding declares `identifier_case` and
+# these are the properties it applies to.
+identifier_properties:
+  - put-db-record-table-name
+  - put-db-record-schema-name
+  - put-db-record-update-keys
+  - dbrecord-lookup-table-name
+  - dbrecord-lookup-key-column

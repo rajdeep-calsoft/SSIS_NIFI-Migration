@@ -1,0 +1,34 @@
+name: telecom_cdr
+package: pkg_telecom_cdr.dtsx
+
+nifi:
+  url: http://localhost:8085
+
+destination_db:
+  db_type: PostgreSQL
+  host: localhost
+  port: 5437
+  dbname: telecom
+  user: telecom_etl
+  password_ref: TELECOM_DB_PASSWORD
+  driver_class: org.postgresql.Driver
+  driver_path: /opt/nifi/drivers/postgresql.jar
+  identifier_case: lower
+  landing_dir: /opt/nifi/data/landing
+
+source_db:
+  host: localhost
+  port: 5436
+  dbname: telecom
+  user: telecom_etl
+  password_ref: TELECOM_DB_PASSWORD
+
+ledger:
+  table: control.job_run_log
+  reject_tables: [quarantine_cdr]
+
+compare:
+  fact_table: fact_calls
+  reject_table: quarantine_cdr
+  reason_column: reason
+  source_table: raw_cdr
