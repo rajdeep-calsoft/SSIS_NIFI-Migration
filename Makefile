@@ -18,6 +18,15 @@ VENV    := .venv
 PY      := $(VENV)/bin/python3
 PIP     := $(VENV)/bin/pip
 
+# Some machines only expose the Docker socket to root (no `docker` group set
+# up) -- detected once per `make` invocation so `make up` (run as yourself,
+# no sudo) still works: only the docker/compose calls escalate, never the
+# venv/pip steps, which is what matters -- running THOSE under sudo is what
+# left .venv root-owned and broke every later non-sudo `make test`/`make
+# migrate` last time. Override explicitly with `make DOCKER_COMPOSE="docker
+# compose" up` if this detection ever guesses wrong.
+DOCKER_COMPOSE := $(shell docker info >/dev/null 2>&1 && echo "docker compose" || echo "sudo docker compose")
+
 help:  ## list these targets
 	@grep -hE '^[a-zA-Z][a-zA-Z0-9_-]*:.*?##' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -46,20 +55,20 @@ down:  ## stop both stacks, keep all data
 	-$(MAKE) down-source
 
 up-source:  ## start only the source (telecom warehouse) stack
-	docker compose -f source/docker-compose.yml up -d
+	$(DOCKER_COMPOSE) -f source/docker-compose.yml up -d
 
 down-source:
-	docker compose -f source/docker-compose.yml down
+	$(DOCKER_COMPOSE) -f source/docker-compose.yml down
 
 up-destination:  ## start only the destination (NiFi + warehouse) stack
-	docker compose -f destination/docker-compose.yml up -d
+	$(DOCKER_COMPOSE) -f destination/docker-compose.yml up -d
 
 down-destination:
-	docker compose -f destination/docker-compose.yml down
+	$(DOCKER_COMPOSE) -f destination/docker-compose.yml down
 
 smoke:  ## health check both stacks
-	@echo "--- source ---";      docker compose -f source/docker-compose.yml ps
-	@echo "--- destination ---"; docker compose -f destination/docker-compose.yml ps
+	@echo "--- source ---";      $(DOCKER_COMPOSE) -f source/docker-compose.yml ps
+	@echo "--- destination ---"; $(DOCKER_COMPOSE) -f destination/docker-compose.yml ps
 
 # ---------------------------------------------------------------------------
 # The migration tool itself -- generic, no telecom-specific code (see
@@ -81,7 +90,7 @@ deploy: migrate  ## alias
 
 generate-data: venv  ## write ROWS synthetic CDRs + ground truth: make generate-data JOB=telecom_cdr ROWS=50000
 	set -a && source source/.env && set +a && \
-	docker compose -f source/docker-compose.yml run --rm generator \
+	$(DOCKER_COMPOSE) -f source/docker-compose.yml run --rm generator \
 	  bulk --rows $(ROWS) --landing-dir /data/landing
 
 compare-report: venv  ## generate the standalone SSIS-vs-NiFi report: make compare-report JOB=telecom_cdr
