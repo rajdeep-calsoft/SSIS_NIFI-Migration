@@ -10,7 +10,7 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 .PHONY: help setup venv up down up-source down-source up-destination down-destination \
-        analyze migrate deploy generate-data compare-report test smoke clean
+        analyze migrate deploy generate-data compare-report reconcile test smoke clean
 
 JOB     ?= telecom_cdr
 ROWS    ?= 50000
@@ -97,6 +97,10 @@ compare-report: venv  ## generate the standalone SSIS-vs-NiFi report: make compa
 	set -a && source source/.env 2>/dev/null; source destination/.env 2>/dev/null && set +a && \
 	TELECOM_DB_PASSWORD=$${TELECOM_DB_PASSWORD:-$$POSTGRES_PASSWORD} \
 	  $(PY) report/cli.py compare-report --job jobs/$(JOB)
+
+reconcile: venv  ## fix landing-file perms + generate a fresh report in one go: make reconcile JOB=telecom_cdr
+	sudo chmod 644 destination/data/landing/*.ndjson 2>/dev/null || true
+	$(MAKE) compare-report JOB=$(JOB)
 
 # ---------------------------------------------------------------------------
 
