@@ -46,6 +46,9 @@ def _atomic_write_ndjson(path: pathlib.Path, records: list[dict]) -> None:
         with open(fd, "w") as fh:
             for rec in records:
                 fh.write(json.dumps(rec) + "\n")
+        # mkstemp always creates at 0600; NiFi's container runs as uid 1000
+        # (not this file's owner), so it needs the world-read bit to see it.
+        pathlib.Path(tmp).chmod(0o644)
         pathlib.Path(tmp).rename(path)
     finally:
         pathlib.Path(tmp).unlink(missing_ok=True)
