@@ -11,3 +11,5 @@ destination/data/landing/*
 destination/data/rejects/*
 !destination/data/landing/.gitkeep
 !destination/data/rejects/.gitkeep
+.claude/
+CLAUDE.md

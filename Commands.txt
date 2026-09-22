@@ -1,0 +1,32 @@
+cd ~/Axion_Yas/poc/ssis-nifi-telecom-migrator
+
+# 0. pull latest local changes if you're not already on them (skip if same checkout)
+git log --oneline -5   # should show "Add a Grafana dashboard..." at top
+
+# 1. one-time setup: .env files, JDBC driver, local venv
+make setup
+
+# 2. bring up both Docker stacks (source postgres, destination nifi+postgres+grafana)
+make up
+
+# 3. confirm everything is healthy before continuing
+make smoke
+docker ps    # all containers should show "healthy", including telecom-dest-grafana
+
+# 4. convert + deploy the telecom job onto the live NiFi
+make migrate JOB=telecom_cdr
+
+# 5. generate 50,000 synthetic CDRs (writes to NiFi's landing dir + source's ground truth)
+make generate-data JOB=telecom_cdr ROWS=50000
+
+# 6. watch it process (either works):
+#      http://localhost:8085/nifi      -- NiFi canvas, watch queues drain to 0
+#      http://localhost:3002           -- Grafana (admin/admin), live counts updating
+
+# 7. once queues are empty, generate the standalone comparison report
+make compare-report JOB=telecom_cdr
+#   -> prints a verdict (AGREES / DIFFERENCES FOUND) and writes
+#      out/reports/telecom_cdr-<timestamp>.html — open that in a browser
+
+# 8. (optional) unit tests, no Docker needed, run any time
+make test
